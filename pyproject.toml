@@ -1,0 +1,231 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wings"
+version = "0.1.0"
+description = "Wavepacket Initialization on Neighboring Grid States - GPU-accelerated variational quantum state preparation"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Joshua Courtney", email = "joshuamcourtney@gmail.com"}
+]
+maintainers = [
+    {name = "Your Name", email = "joshuamcourtney@gmail.com"}
+]
+keywords = [
+    "quantum computing",
+    "variational quantum algorithms",
+    "quantum state preparation",
+    "gaussian wavefunction",
+    "wavepacket",
+    "qiskit",
+    "cuQuantum",
+    "GPU acceleration",
+    "VQA",
+    "quantum simulation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Typing :: Typed",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "qiskit>=1.0",
+    "matplotlib>=3.5",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "qiskit-aer>=0.13",
+    "cuquantum-python>=23.0",
+    "cupy-cuda11x>=12.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
+    "pytest-xdist>=3.0",
+    "hypothesis>=6.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+    "pylatexenc>=2.0",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=1.3",
+    "nbsphinx>=0.9",
+    "myst-parser>=2.0",
+]
+all = [
+    "wings-quantum[gpu,dev,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/jmcourtneyuga/wings"
+Documentation = "https://github.com/jmcourtneyuga/wings"
+Repository = "https://github.com/jmcourtneyuga/wings.git"
+Issues = "https://github.com/jmcourtneyuga/wings/issues"
+Changelog = "https://github.com/jmcourtneyuga/wings/blob/main/CHANGELOG.md"
+
+[project.scripts]
+wings = "wings.cli:main"
+
+# ============================================================================
+# Setuptools Configuration (src layout)
+# ============================================================================
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["wings*"]
+
+[tool.setuptools.package-data]
+wings = ["py.typed"]
+
+# ============================================================================
+# Ruff Configuration
+# ============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "C901",   # too complex
+    "ARG001", # unused function argument (common in protocols)
+    "SIM108", # use ternary operator (not always clearer)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports in __init__
+"tests/*" = ["B011", "ARG"]  # assert False, unused args in tests
+"conftest.py" = ["ARG"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["wings"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# ============================================================================
+# MyPy Configuration
+# ============================================================================
+
+# ============================================================================
+# MyPy Configuration
+# ============================================================================
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_return_any = false
+no_implicit_optional = false
+exclude = [
+    "tests/",
+    "docs/",
+    "build/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "wings.optimizer",
+    "wings.campaign",
+    "wings.evaluators.custatevec",
+    "wings.paths",
+    "wings.config",
+    "wings.results",
+    "wings.benchmarks",
+    "wings.compat",
+]
+ignore_errors = true
+
+# ============================================================================
+# Pytest Configuration
+# ============================================================================
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "-ra",
+    "--strict-markers",
+]
+markers = [
+    "unit: Unit tests (fast, no GPU)",
+    "integration: Integration tests",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests requiring GPU (deselect with '-m \"not gpu\"')",
+    "custatevec: marks tests requiring cuStateVec",
+    "multi_gpu: marks tests requiring multiple GPUs",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# ============================================================================
+# Coverage Configuration
+# ============================================================================
+
+[tool.coverage.run]
+source = ["src/wings"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+    "*/cli.py",  # CLI tested separately
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "except ImportError:",
+    "pass",
+]
+fail_under = 60
+show_missing = true
+skip_covered = true
+
+[tool.coverage.html]
+directory = "htmlcov"

@@ -1,0 +1,74 @@
+#Command Line
+# Install the package
+pip install -e .
+
+# Quick optimization
+gso optimize --qubits 8 --sigma 0.5
+
+# Production campaign
+gso campaign --qubits 10 --sigma 0.5 --runs 1000 --target-infidelity 1e-11
+
+# Benchmark your system
+gso benchmark --qubits 12
+
+# Find optimal backend
+gso crossover
+
+# Check available backends
+gso info
+
+# List previous campaigns
+gso campaigns list
+
+# Load and view campaign results
+gso campaigns load campaign_q8_s0.50_20240101_120000
+
+
+#Python Interface
+# Quick interactive use
+from gaussian_state_optimizer import OptimizerConfig, TargetFunction
+
+# Lorentzian
+config = OptimizerConfig(
+    n_qubits=8,
+    target_function=TargetFunction.LORENTZIAN,
+    gamma=0.5,  # Width parameter
+    x0=0.0,
+)
+
+# Custom function
+def my_wavefunction(x):
+    """Double Gaussian"""
+    return np.exp(-((x-1)**2)/0.5) + np.exp(-((x+1)**2)/0.5)
+
+config = OptimizerConfig(
+    n_qubits=8,
+    target_function=TargetFunction.CUSTOM,
+    custom_target_fn=my_wavefunction,
+)
+
+# Benchmarking
+from gaussian_state_optimizer import find_gpu_crossover, benchmark_gpu
+
+info = find_gpu_crossover()
+print(f"GPU becomes faster at {info['crossover_qubits']} qubits")
+
+benchmark_gpu(n_qubits=12)
+
+from gaussian_state_optimizer import OptimizerConfig, TargetFunction
+
+# Test 1: Lorentzian with shift
+config = OptimizerConfig(
+    n_qubits=8,
+    target_function=TargetFunction.LORENTZIAN,
+    gamma=0.3,
+    x0=1.5,
+)
+
+# Test 2: Multi-GPU (if available)
+config = OptimizerConfig(
+    n_qubits=12,
+    use_multi_gpu=True,
+)
+
+

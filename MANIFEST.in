@@ -1,0 +1,35 @@
+# MANIFEST.in for WINGS
+# Controls what files are included in source distributions (sdist)
+
+# Documentation
+include README.md
+include DOCUMENTATION.md
+include CHANGELOG.md
+include LICENSE.txt
+
+# Type information (PEP 561)
+include src/wings/py.typed
+
+# Build configuration
+include pyproject.toml
+include Makefile
+
+# Tests
+recursive-include tests *.py
+recursive-include tests/data *
+
+# Examples (if directory exists)
+recursive-include examples *.py *.ipynb *.md
+
+# Exclude compiled/generated files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude *.egg-info
+global-exclude .coverage
+global-exclude .pytest_cache
+global-exclude .mypy_cache
+global-exclude .ruff_cache
