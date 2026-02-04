@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wings"
+name = "wings-quantum"
 version = "0.1.0"
 description = "Wavepacket Initialization on Neighboring Grid States - GPU-accelerated variational quantum state preparation"
 readme = "README.md"
