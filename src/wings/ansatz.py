@@ -43,10 +43,13 @@ class AnsatzProtocol(Protocol):
 
 
 class DefaultAnsatz:
-    def __init__(self, n_qubits: int, depth: Optional[int] = None) -> None:
+    def __init__(self, n_qubits: int, depth: Optional[int] = None, entanglement: str = "linear") -> None:
         self._n_qubits = n_qubits
         self._depth = depth if depth is not None else n_qubits
         self._n_params = n_qubits * self._depth
+        self._entanglement = entanglement
+        from .ansatz_library import generate_entanglement_map
+        self._entanglement_map = generate_entanglement_map(n_qubits, entanglement)
 
     @property
     def n_params(self) -> int:
@@ -63,6 +66,10 @@ class DefaultAnsatz:
     @property
     def depth(self) -> int:
         return self._depth
+
+    @property
+    def entanglement(self) -> str:
+        return self._entanglement
 
     def __call__(
         self,
@@ -82,8 +89,8 @@ class DefaultAnsatz:
         for i in range(n):
             qc.ry(params[i], i)
         for d in range(D2 - 1):
-            for i in range(n - 1):
-                qc.cx(i, i + 1)
+            for ctrl, tgt in self._entanglement_map:
+                qc.cx(ctrl, tgt)
             qc.barrier()
             for i in range(n):
                 param_idx = n + n * d + i

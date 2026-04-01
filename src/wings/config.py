@@ -16,6 +16,7 @@ from .paths import get_path_config
 
 __all__ = [
     "TargetFunction",
+    "optimal_box_size",
     "OptimizerConfig",
     "OptimizationPipeline",
     "OptimizationStrategy",
@@ -29,7 +30,101 @@ class TargetFunction(Enum):
     GAUSSIAN = "gaussian"
     LORENTZIAN = "lorentzian"
     SECH = "sech"  # Hyperbolic secant (soliton-like)
+    GAUSSIAN_WAVEPACKET = "gaussian_wavepacket"
+    TRACY_WIDOM_GOE = "tracy_widom_goe"    # TW_1 (β=1, real symmetric)
+    TRACY_WIDOM_GUE = "tracy_widom_gue"    # TW_2 (β=2, Hermitian)
+    TRACY_WIDOM_GSE = "tracy_widom_gse"    # TW_4 (β=4, quaternion self-dual)
     CUSTOM = "custom"
+
+
+_TRACY_WIDOM_TARGETS = {
+    TargetFunction.TRACY_WIDOM_GOE,
+    TargetFunction.TRACY_WIDOM_GUE,
+    TargetFunction.TRACY_WIDOM_GSE,
+}
+
+# Map enum members to Painlevé β index
+_TW_BETA_MAP = {
+    TargetFunction.TRACY_WIDOM_GOE: 1,
+    TargetFunction.TRACY_WIDOM_GUE: 2,
+    TargetFunction.TRACY_WIDOM_GSE: 4,
+}
+
+
+def optimal_box_size(
+    sigma: float,
+    n_qubits: int,
+    target_function: str = "gaussian",
+    safety_factor: float = 1.0,
+) -> float:
+    """
+    Compute optimal box size balancing truncation and discretization error.
+
+    For a Gaussian wavefunction exp(-x^2/(2*sigma^2)) on a grid of 2^n_qubits
+    points spanning [-L, L]:
+
+    - Truncation error ~ erfc(L / (sqrt(2) * sigma))
+    - Discretization error ~ (2L / (2^n - 1))^2 / sigma^2
+
+    The optimal L minimizes the total error.
+
+    Args:
+        sigma: Width parameter of the Gaussian
+        n_qubits: Number of qubits (grid has 2^n_qubits points)
+        target_function: Type of target ("gaussian", "lorentzian", "sech")
+        safety_factor: Multiplier on the result (>1 for extra margin)
+
+    Returns:
+        Optimal box half-width L
+    """
+    from scipy.optimize import minimize_scalar
+    from scipy.special import erfc
+
+    n_points = 2 ** n_qubits
+
+    if target_function == "gaussian":
+        def total_error(L):
+            if L <= 0:
+                return 1e10
+            dx = 2 * L / (n_points - 1)
+            # Truncation: probability mass outside [-L, L]
+            trunc = erfc(L / (np.sqrt(2) * sigma))
+            # Discretization: (dx/sigma)^2 captures aliasing from undersampling
+            disc = (dx / sigma) ** 2
+            return trunc + disc
+
+        # Search in a reasonable range
+        result = minimize_scalar(total_error, bounds=(sigma, 20 * sigma), method="bounded")
+        L_opt = result.x
+    elif target_function == "lorentzian":
+        # Lorentzian has heavier tails; truncation error ~ sigma/L
+        def total_error(L):
+            if L <= 0:
+                return 1e10
+            dx = 2 * L / (n_points - 1)
+            trunc = sigma / L  # Cauchy tail
+            disc = (dx / sigma) ** 2
+            return trunc + disc
+
+        result = minimize_scalar(total_error, bounds=(sigma, 50 * sigma), method="bounded")
+        L_opt = result.x
+    elif target_function == "sech":
+        # Sech decays exponentially like Gaussian but slightly slower
+        def total_error(L):
+            if L <= 0:
+                return 1e10
+            dx = 2 * L / (n_points - 1)
+            trunc = 2 * np.exp(-np.pi * L / (2 * sigma))
+            disc = (dx / sigma) ** 2
+            return trunc + disc
+
+        result = minimize_scalar(total_error, bounds=(sigma, 20 * sigma), method="bounded")
+        L_opt = result.x
+    else:
+        # For unknown functions, fall back to heuristic
+        L_opt = max(4.0, 8 * sigma)
+
+    return L_opt * safety_factor
 
 
 @dataclass
@@ -84,7 +179,9 @@ class OptimizerConfig:
     n_qubits: int = 9
     sigma: float = 1.0
     x0: float = 0.0  # Center position (shift wavefunction left/right)
+    momentum: float = 0.0  # Momentum k for wavepacket exp(ikx) phase  # v0.2.0
     box_size: Optional[float] = None
+    auto_optimize_box: bool = False  # v0.2.0
 
     # ========================================
     # Target Wavefunction
@@ -109,6 +206,7 @@ class OptimizerConfig:
     tolerance: float = 1e-12
     gtol: float = 1e-12
     use_analytic_gradients: bool = True
+    gradient_sample_fraction: float = 1.0  # Fraction of params for stochastic gradient  # v0.2.0
 
     # High precision mode
     high_precision: bool = True
@@ -141,6 +239,9 @@ class OptimizerConfig:
     use_custatevec: bool = True
     custatevec_batch_size: int = 128
 
+    # Backend selection
+    backend: str = "auto"  # "auto", "qiskit", "jax" -- selects statevector simulation engine  # v0.4.0
+
     # Multi-GPU support
     use_multi_gpu: bool = False
     gpu_device_ids: Optional[list[int]] = None  # None = auto-detect all GPUs
@@ -165,7 +266,14 @@ class OptimizerConfig:
             self.n_workers = max(1, mp.cpu_count() - 1)
 
         # Only auto-calculate box_size if not explicitly provided
-        if self.box_size is None:
+        if self.target_function in _TRACY_WIDOM_TARGETS and self.box_size is None:
+            # TW PDFs live on ~[-8, 5]; use 8.0 to cover full support
+            self.box_size = 8.0
+        elif self.auto_optimize_box and self.box_size is None:
+            target_fn_name = self.target_function.value if hasattr(self.target_function, 'value') else str(self.target_function)
+            self.box_size = optimal_box_size(self.sigma, self.n_qubits, target_fn_name)
+        elif self.box_size is None:
+            # Existing heuristic (default)
             if self.sigma < 0.5:
                 self.box_size = max(4.0, 12 * self.sigma)
             else:
@@ -249,6 +357,21 @@ class OptimizationPipeline:
 
     use_fine_tuning: bool = True
     fine_tuning_threshold: float = 0.9999
+
+    # Log-infidelity objective for high-precision refinement (P2)
+    use_log_objective: bool = True
+    log_objective_threshold: float = 0.999
+
+    # Legacy fields - prefer composable Pipeline stages for new code
+    use_natural_gradient: bool = False  # Use NaturalGradient() stage instead
+    natural_gradient_regularization: float = 0.001
+
+    # Legacy fields - prefer composable Pipeline stages for new code
+    use_adaptive_depth: bool = False  # Use GrowCircuit() stage instead
+    min_depth: int = 2
+    max_depth: int = 0  # 0 means use n_qubits
+    depth_step: int = 1
+    depth_fidelity_plateau: float = 1e-6
 
     verbose: bool = True
 

@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wings-quantum"
-version = "0.1.0"
+name = "wings"
+version = "0.4.0"
 description = "Wavepacket Initialization on Neighboring Grid States - GPU-accelerated variational quantum state preparation"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -54,6 +54,16 @@ gpu = [
     "cuquantum-python>=23.0",
     "cupy-cuda11x>=12.0",
 ]
+jax = [
+    "jax>=0.4",
+    "jaxlib>=0.4",
+]
+viz = [
+    "plotly>=5.0",
+]
+hardware = [
+    "qiskit-ibm-runtime>=0.20",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -72,7 +82,7 @@ docs = [
     "myst-parser>=2.0",
 ]
 all = [
-    "wings-quantum[gpu,dev,docs]",
+    "wings[gpu,jax,viz,hardware,dev]",
 ]
 
 [project.urls]

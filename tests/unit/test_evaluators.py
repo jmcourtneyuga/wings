@@ -545,3 +545,27 @@ class TestMultiGPUBatchEvaluator:
             if "No GPUs" in str(e) or "single GPU" in str(e).lower():
                 pytest.skip("Multiple GPUs not available")
             raise
+
+
+@pytest.mark.custatevec
+class TestCUDAStreamPipelining:
+    """Tests for CUDA stream pipelining (v0.3.0)."""
+
+    def test_simulator_has_stream(self):
+        from wings.evaluators.custatevec import CuStateVecSimulator
+        sim = CuStateVecSimulator(n_qubits=4, precision="double")
+        assert hasattr(sim, "stream")
+        assert sim.stream is not None
+        sim.destroy()
+
+    def test_simulator_has_rz(self):
+        from wings.evaluators.custatevec import CuStateVecSimulator
+        sim = CuStateVecSimulator(n_qubits=4, precision="double")
+        assert hasattr(sim, "apply_rz")
+        sim.destroy()
+
+    def test_simulator_has_synchronize(self):
+        from wings.evaluators.custatevec import CuStateVecSimulator
+        sim = CuStateVecSimulator(n_qubits=4, precision="double")
+        assert hasattr(sim, "synchronize")
+        sim.destroy()

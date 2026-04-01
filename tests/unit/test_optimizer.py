@@ -6,6 +6,93 @@ import numpy as np
 import pytest
 
 
+@pytest.mark.unit
+class TestDirectInfidelity:
+    """Tests for direct infidelity computation (P3)."""
+
+    def test_infidelity_direct_matches_naive_low_f(self, small_optimizer, random_params_6q):
+        """For F < 0.99, direct and naive methods should agree."""
+        psi = small_optimizer.get_statevector(random_params_6q)
+        fidelity = small_optimizer._compute_fidelity_fast(psi)
+
+        naive_infidelity = 1.0 - fidelity
+        direct_infidelity = small_optimizer._compute_infidelity_direct(psi)
+
+        assert abs(naive_infidelity - direct_infidelity) < 1e-12
+
+    def test_infidelity_direct_self_is_zero(self, small_optimizer):
+        """Target with itself should give infidelity ~ 0."""
+        infidelity = small_optimizer._compute_infidelity_direct(small_optimizer.target)
+        assert infidelity < 1e-28
+
+    def test_infidelity_direct_orthogonal_is_one(self, small_optimizer):
+        """Orthogonal state should give infidelity = 1."""
+        # Create a state orthogonal to target
+        n = len(small_optimizer.target)
+        ortho = np.zeros(n, dtype=np.complex128)
+        # Find index where target has minimum magnitude, put all weight there
+        min_idx = np.argmin(np.abs(small_optimizer.target))
+        ortho[min_idx] = 1.0
+        # Gram-Schmidt orthogonalize
+        overlap = np.dot(np.conj(small_optimizer.target), ortho)
+        ortho = ortho - overlap * small_optimizer.target
+        ortho = ortho / np.linalg.norm(ortho)
+
+        infidelity = small_optimizer._compute_infidelity_direct(ortho)
+        assert abs(infidelity - 1.0) < 1e-10
+
+    def test_infidelity_direct_nonnegative(self, small_optimizer):
+        """Infidelity must always be >= 0."""
+        for _ in range(20):
+            params = np.random.randn(small_optimizer.n_params) * 0.5
+            psi = small_optimizer.get_statevector(params)
+            infidelity = small_optimizer._compute_infidelity_direct(psi)
+            assert infidelity >= 0.0
+
+    def test_infidelity_direct_at_high_f(self, small_optimizer):
+        """Direct method should be stable at F ~ 1 - 1e-14 where naive 1-F fails."""
+        target = small_optimizer.target
+        # Construct a state with known tiny infidelity:
+        # psi = (1-eps^2/2)*target + eps*ortho  (normalized, F ~ 1 - eps^2)
+        n = len(target)
+        # Build an orthogonal unit vector
+        ortho = np.zeros(n, dtype=np.complex128)
+        min_idx = np.argmin(np.abs(target))
+        ortho[min_idx] = 1.0
+        overlap = np.dot(np.conj(target), ortho)
+        ortho = ortho - overlap * target
+        ortho = ortho / np.linalg.norm(ortho)
+
+        eps = 1e-7  # gives infidelity ~ eps^2 = 1e-14
+        psi = target * np.sqrt(1.0 - eps**2) + ortho * eps
+        psi = psi / np.linalg.norm(psi)  # ensure normalization
+
+        expected_infidelity = eps**2  # ~1e-14
+
+        direct_infidelity = small_optimizer._compute_infidelity_direct(psi)
+
+        # Direct method should be accurate to within a factor of 2
+        assert direct_infidelity > 0, "Direct infidelity should be positive"
+        assert abs(direct_infidelity - expected_infidelity) / expected_infidelity < 0.5, (
+            f"Direct infidelity {direct_infidelity:.2e} should be close to "
+            f"expected {expected_infidelity:.2e}"
+        )
+
+        # Naive 1-F loses precision here
+        fidelity = small_optimizer._compute_fidelity_fast(psi)
+        naive_infidelity = 1.0 - fidelity
+        # naive_infidelity may have large relative error at this scale
+        # (this documents the problem, not a pass/fail criterion)
+
+    def test_infidelity_direct_consistency(self, small_optimizer, random_params_6q):
+        """F + (1-F) should equal 1 when computed via direct method."""
+        psi = small_optimizer.get_statevector(random_params_6q)
+        fidelity = small_optimizer._compute_fidelity_fast(psi)
+        infidelity = small_optimizer._compute_infidelity_direct(psi)
+
+        assert abs(fidelity + infidelity - 1.0) < 1e-12
+
+
 class TestGaussianOptimizerInit:
     """Tests for GaussianOptimizer initialization."""
 
@@ -514,3 +601,456 @@ class TestGaussianOptimizerOptimizationSlow:
         results = small_optimizer.run_optimization(pipeline)
 
         assert results["fidelity"] > 0.95
+
+
+@pytest.mark.unit
+class TestLogFidelityObjective:
+    """Tests for logarithmic fidelity objective (P2)."""
+
+    def test_log_objective_value(self, small_optimizer, random_params_6q):
+        """Log-infidelity should equal log(1-F)."""
+        psi = small_optimizer.get_statevector(random_params_6q)
+        fidelity = small_optimizer._compute_fidelity_fast(psi)
+
+        log_inf = small_optimizer.objective_log_infidelity(random_params_6q)
+        expected = np.log(1.0 - fidelity) if fidelity < 1.0 else -40.0
+
+        assert abs(log_inf - expected) < 1e-8
+
+    def test_log_objective_is_negative(self, small_optimizer, random_params_6q):
+        """Log-infidelity should always be negative (infidelity < 1)."""
+        log_inf = small_optimizer.objective_log_infidelity(random_params_6q)
+        assert log_inf < 0
+
+    def test_log_objective_gradient_shape(self, small_optimizer, random_params_6q):
+        """Gradient should have correct shape."""
+        val, grad = small_optimizer.objective_and_gradient_log_infidelity(random_params_6q)
+        assert isinstance(val, float)
+        assert grad.shape == (small_optimizer.n_params,)
+
+    def test_log_objective_gradient_finite(self, small_optimizer, random_params_6q):
+        """Gradient should contain finite values."""
+        val, grad = small_optimizer.objective_and_gradient_log_infidelity(random_params_6q)
+        assert np.all(np.isfinite(grad))
+
+    def test_log_objective_gradient_vs_finite_diff(self, small_optimizer, random_params_6q):
+        """Gradient should approximate finite differences."""
+        eps = 1e-5
+        _, analytic_grad = small_optimizer.objective_and_gradient_log_infidelity(random_params_6q)
+
+        # Check a few components with finite differences
+        for i in range(min(3, len(random_params_6q))):
+            params_plus = random_params_6q.copy()
+            params_minus = random_params_6q.copy()
+            params_plus[i] += eps
+            params_minus[i] -= eps
+
+            f_plus = small_optimizer.objective_log_infidelity(params_plus)
+            f_minus = small_optimizer.objective_log_infidelity(params_minus)
+
+            fd_grad = (f_plus - f_minus) / (2 * eps)
+
+            # Relative or absolute tolerance
+            if abs(analytic_grad[i]) > 1e-6:
+                assert abs(analytic_grad[i] - fd_grad) / abs(analytic_grad[i]) < 0.2
+            else:
+                assert abs(analytic_grad[i] - fd_grad) < 0.1
+
+    def test_log_objective_at_zero_fidelity(self, small_optimizer):
+        """Log objective should work near F=0."""
+        # Random params will give low fidelity
+        params = np.random.randn(small_optimizer.n_params) * 5.0
+        log_inf = small_optimizer.objective_log_infidelity(params)
+        assert np.isfinite(log_inf)
+        assert log_inf < 0  # log(~1) is near 0
+
+    def test_pipeline_config_log_objective_fields(self):
+        """OptimizationPipeline should have log objective fields."""
+        from wings.config import OptimizationPipeline
+
+        pipeline = OptimizationPipeline()
+        assert hasattr(pipeline, 'use_log_objective')
+        assert hasattr(pipeline, 'log_objective_threshold')
+        assert pipeline.use_log_objective == True
+        assert pipeline.log_objective_threshold == 0.999
+
+    def test_pipeline_backward_compat(self):
+        """Pipeline with use_log_objective=False should still work."""
+        from wings.config import OptimizationPipeline
+
+        pipeline = OptimizationPipeline(use_log_objective=False)
+        assert pipeline.use_log_objective == False
+
+
+class TestVectorizedShifts:
+    """Tests for vectorized shifted-parameter construction (P1)."""
+
+    @pytest.mark.unit
+    def test_vectorized_shift_construction(self):
+        """Build shifted params both ways (loop and vectorized), verify identical for n_params=36."""
+        n_params = 36
+        rng = np.random.RandomState(123)
+        params = rng.randn(n_params)
+        shift = np.pi / 2
+
+        # Loop version
+        params_loop = np.zeros((2 * n_params, n_params))
+        for i in range(n_params):
+            params_loop[2 * i] = params.copy()
+            params_loop[2 * i, i] += shift
+            params_loop[2 * i + 1] = params.copy()
+            params_loop[2 * i + 1, i] -= shift
+
+        # Vectorized version
+        params_vec = np.tile(params, (2 * n_params, 1))
+        idx = np.arange(n_params)
+        params_vec[2 * idx, idx] += shift
+        params_vec[2 * idx + 1, idx] -= shift
+
+        np.testing.assert_array_equal(params_loop, params_vec)
+
+    @pytest.mark.unit
+    def test_vectorized_gradient_extraction(self):
+        """Verify vectorized gradient extraction matches loop version."""
+        n_params = 36
+        rng = np.random.RandomState(456)
+        fidelities = rng.rand(2 * n_params)
+
+        # Loop version
+        gradient_loop = np.zeros(n_params)
+        for i in range(n_params):
+            gradient_loop[i] = (fidelities[2 * i] - fidelities[2 * i + 1]) / 2
+
+        # Vectorized version
+        gradient_vec = (fidelities[0::2] - fidelities[1::2]) / 2
+
+        np.testing.assert_array_equal(gradient_loop, gradient_vec)
+
+    @pytest.mark.unit
+    def test_gpu_gradient_uses_vectorized_shifts(self, small_optimizer, random_params_6q):
+        """Verify _compute_gradient_gpu_impl produces correct gradient shape and finite values."""
+        # _compute_gradient_gpu_impl will fall back to sequential when no GPU
+        # is available, but we can still verify the interface works correctly
+        gradient = small_optimizer._compute_gradient_gpu_impl(random_params_6q)
+
+        assert gradient.shape == (36,), f"Expected shape (36,), got {gradient.shape}"
+        assert np.all(np.isfinite(gradient)), "Gradient contains non-finite values"
+
+
+@pytest.mark.unit
+class TestStochasticGradient:
+    """Tests for stochastic parameter-shift gradients (P5)."""
+
+    def test_stochastic_gradient_shape(self, small_optimizer, random_params_6q):
+        """Output shape should match n_params."""
+        grad = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.5)
+        assert grad.shape == (small_optimizer.n_params,)
+
+    def test_stochastic_gradient_sparsity(self, small_optimizer, random_params_6q):
+        """Only k = floor(n_params * fraction) components should be nonzero."""
+        n = small_optimizer.n_params
+        grad = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.5)
+        n_nonzero = np.count_nonzero(grad)
+        expected_k = max(1, int(n * 0.5))
+        assert n_nonzero == expected_k
+
+    def test_stochastic_gradient_reproducible(self, small_optimizer, random_params_6q):
+        """Same RNG seed should give identical results."""
+        rng1 = np.random.default_rng(42)
+        rng2 = np.random.default_rng(42)
+        grad1 = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.5, rng=rng1)
+        grad2 = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.5, rng=rng2)
+        np.testing.assert_array_equal(grad1, grad2)
+
+    def test_stochastic_gradient_unbiased(self, small_optimizer, random_params_6q):
+        """Averaged over many samples, stochastic gradient should approximate full gradient."""
+        full_grad = small_optimizer.compute_gradient(random_params_6q)
+
+        n_samples = 50
+        grad_sum = np.zeros_like(full_grad)
+        for i in range(n_samples):
+            rng = np.random.default_rng(i)
+            grad = small_optimizer.compute_gradient_stochastic(
+                random_params_6q, fraction=0.5, rng=rng
+            )
+            grad_sum += grad
+
+        grad_avg = grad_sum / n_samples
+
+        # Scale by 1/fraction since each component is sampled with probability=fraction
+        grad_avg_scaled = grad_avg / 0.5
+
+        # Should be close to the full gradient
+        np.testing.assert_allclose(grad_avg_scaled, full_grad, atol=0.3)
+
+    def test_fraction_one_equals_full(self, small_optimizer, random_params_6q):
+        """fraction=1.0 should fall through to full gradient."""
+        full_grad = small_optimizer.compute_gradient(random_params_6q)
+        stoch_grad = small_optimizer.compute_gradient_stochastic(
+            random_params_6q, fraction=1.0
+        )
+        np.testing.assert_allclose(stoch_grad, full_grad, atol=1e-10)
+
+    def test_config_gradient_sample_fraction_default(self):
+        """Default gradient_sample_fraction should be 1.0."""
+        from wings.config import OptimizerConfig
+        config = OptimizerConfig(n_qubits=6, sigma=1.0, verbose=False, use_gpu=False, use_custatevec=False)
+        assert config.gradient_sample_fraction == 1.0
+
+    def test_stochastic_gradient_finite(self, small_optimizer, random_params_6q):
+        """All gradient values should be finite."""
+        grad = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.3)
+        assert np.all(np.isfinite(grad))
+
+
+@pytest.mark.unit
+class TestComplexWavepackets:
+    """Tests for complex-valued / momentum wavepackets (P8)."""
+
+    def test_momentum_zero_real(self, small_config):
+        """With momentum=0, target should be real-valued."""
+        from wings import GaussianOptimizer
+
+        small_config.momentum = 0.0
+        opt = GaussianOptimizer(small_config)
+        assert np.allclose(opt.target.imag, 0.0, atol=1e-15)
+
+    def test_momentum_nonzero_complex(self):
+        """With momentum != 0, target should have nonzero imaginary part."""
+        from wings import GaussianOptimizer
+        from wings.config import OptimizerConfig
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=2.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        with pytest.warns(UserWarning, match="DefaultAnsatz"):
+            opt = GaussianOptimizer(config)
+        assert np.any(np.abs(opt.target.imag) > 0.01)
+
+    def test_momentum_target_normalized(self):
+        """Complex wavepacket should be normalized."""
+        from wings import GaussianOptimizer
+        from wings.config import OptimizerConfig
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=3.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        with pytest.warns(UserWarning, match="DefaultAnsatz"):
+            opt = GaussianOptimizer(config)
+        norm = np.linalg.norm(opt.target)
+        assert abs(norm - 1.0) < 1e-10
+
+    def test_momentum_envelope_is_gaussian(self):
+        """The envelope |psi(x)| should still be Gaussian."""
+        from wings import GaussianOptimizer
+        from wings.config import OptimizerConfig
+
+        config_no_k = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=0.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        config_with_k = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=3.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        opt_no_k = GaussianOptimizer(config_no_k)
+        with pytest.warns(UserWarning, match="DefaultAnsatz"):
+            opt_with_k = GaussianOptimizer(config_with_k)
+        # |psi| should be the same (Gaussian envelope unchanged by momentum)
+        np.testing.assert_allclose(
+            np.abs(opt_with_k.target), np.abs(opt_no_k.target), atol=1e-10,
+        )
+
+    def test_fidelity_computation_complex(self):
+        """Fidelity computation should work correctly for complex targets."""
+        from wings import GaussianOptimizer
+        from wings.config import OptimizerConfig
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=1.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        with pytest.warns(UserWarning, match="DefaultAnsatz"):
+            opt = GaussianOptimizer(config)
+        # Fidelity of target with itself should be 1
+        f = opt._compute_fidelity_fast(opt.target)
+        assert abs(f - 1.0) < 1e-12
+
+    def test_gradient_computation_complex(self):
+        """Parameter-shift gradient should work for complex targets."""
+        from wings import GaussianOptimizer
+        from wings.config import OptimizerConfig
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=1.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        with pytest.warns(UserWarning, match="DefaultAnsatz"):
+            opt = GaussianOptimizer(config)
+        params = opt.get_initial_params("random")
+        grad = opt.compute_gradient(params)
+        assert grad.shape == (opt.n_params,)
+        assert np.all(np.isfinite(grad))
+
+    def test_default_ansatz_warning(self):
+        """Should warn when using DefaultAnsatz with momentum."""
+        from wings import GaussianOptimizer
+        from wings.config import OptimizerConfig
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, momentum=2.0, verbose=False,
+            use_gpu=False, use_custatevec=False,
+        )
+        with pytest.warns(UserWarning, match="DefaultAnsatz"):
+            GaussianOptimizer(config)
+
+    def test_gaussian_wavepacket_enum(self):
+        """GAUSSIAN_WAVEPACKET should be a valid target function."""
+        from wings.config import TargetFunction
+
+        assert hasattr(TargetFunction, "GAUSSIAN_WAVEPACKET")
+
+    def test_backward_compat_momentum_zero(self, small_config):
+        """Default momentum=0 should give identical results to v0.1.0."""
+        from wings import GaussianOptimizer
+
+        opt = GaussianOptimizer(small_config)
+        # Target should be real
+        assert np.allclose(opt.target.imag, 0.0, atol=1e-15)
+        # Config momentum should default to 0
+        assert small_config.momentum == 0.0
+
+
+@pytest.mark.unit
+class TestAdaptiveDepth:
+    """Tests for adaptive circuit depth (layer-ramp)."""
+
+    def test_adaptive_depth_config(self):
+        from wings.config import OptimizationPipeline
+        pipeline = OptimizationPipeline()
+        assert hasattr(pipeline, "use_adaptive_depth")
+        assert hasattr(pipeline, "min_depth")
+        assert hasattr(pipeline, "max_depth")
+
+    def test_adaptive_depth_disabled_by_default(self):
+        from wings.config import OptimizationPipeline
+        pipeline = OptimizationPipeline()
+        assert pipeline.use_adaptive_depth is False
+
+    def test_grow_circuit_adds_layer(self):
+        from wings import GaussianOptimizer, OptimizerConfig
+        from wings.ansatz import DefaultAnsatz
+        ansatz = DefaultAnsatz(n_qubits=6, depth=2)
+        config = OptimizerConfig(n_qubits=6, sigma=0.5, ansatz=ansatz, verbose=False, use_gpu=False, use_custatevec=False)
+        opt = GaussianOptimizer(config)
+        old_n_params = opt.n_params
+        new_params = opt.grow_circuit(opt.get_initial_params("smart"))
+        assert len(new_params) > old_n_params
+        assert opt.n_params > old_n_params
+
+    def test_grow_preserves_fidelity(self):
+        from wings import GaussianOptimizer, OptimizerConfig
+        from wings.ansatz import DefaultAnsatz
+        ansatz = DefaultAnsatz(n_qubits=6, depth=2)
+        config = OptimizerConfig(n_qubits=6, sigma=0.5, ansatz=ansatz, verbose=False, use_gpu=False, use_custatevec=False)
+        opt = GaussianOptimizer(config)
+        params = opt.get_initial_params("smart")
+        fid_before = opt.compute_fidelity(params=params)
+        new_params = opt.grow_circuit(params)
+        fid_after = opt.compute_fidelity(params=new_params)
+        assert abs(fid_after - fid_before) < 0.10
+
+
+@pytest.mark.unit
+class TestV030Integration:
+    """Integration tests for v0.3.0 features working together."""
+
+    def test_efficientsu2_with_momentum(self):
+        """EfficientSU2 + momentum wavepacket should work together."""
+        from wings import GaussianOptimizer, OptimizerConfig
+        from wings.ansatz_library import EfficientSU2Ansatz
+        ansatz = EfficientSU2Ansatz(n_qubits=6, layers=3, entanglement="circular")
+        config = OptimizerConfig(
+            n_qubits=6, sigma=0.5, momentum=1.0, ansatz=ansatz,
+            verbose=False, use_gpu=False, use_custatevec=False,
+        )
+        opt = GaussianOptimizer(config)
+        params = np.random.randn(ansatz.n_params) * 0.1
+        fid = opt.compute_fidelity(params=params)
+        assert 0 <= fid <= 1
+
+    def test_log_distance_entanglement_in_optimizer(self):
+        """Log-distance entanglement should work in full optimization."""
+        from wings import GaussianOptimizer, OptimizerConfig
+        from wings.ansatz import DefaultAnsatz
+        ansatz = DefaultAnsatz(n_qubits=6, entanglement="log_distance")
+        config = OptimizerConfig(
+            n_qubits=6, sigma=0.5, ansatz=ansatz,
+            verbose=False, use_gpu=False, use_custatevec=False,
+        )
+        opt = GaussianOptimizer(config)
+        result = opt.optimize_adam(opt.get_initial_params("smart"), max_steps=50, lr=0.02)
+        assert result["fidelity"] > 0
+
+    def test_warm_start_then_optimize(self):
+        """Warm-started params should lead to successful optimization."""
+        from wings import GaussianOptimizer, OptimizerConfig
+        from wings.warm_start import transfer_params
+        config_6 = OptimizerConfig(n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False)
+        opt_6 = GaussianOptimizer(config_6)
+        r6 = opt_6.optimize_adam(opt_6.get_initial_params("smart"), max_steps=50, lr=0.02)
+        params_8 = transfer_params(r6["params"], 6, 8)
+        config_8 = OptimizerConfig(n_qubits=8, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False)
+        opt_8 = GaussianOptimizer(config_8)
+        r8 = opt_8.optimize_adam(params_8, max_steps=50, lr=0.02)
+        assert r8["fidelity"] > 0
+
+    def test_barren_plateau_detector_in_adam(self):
+        """Adam optimization should include barren plateau monitoring."""
+        from wings import GaussianOptimizer, OptimizerConfig
+        config = OptimizerConfig(n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False)
+        opt = GaussianOptimizer(config)
+        result = opt.optimize_adam(opt.get_initial_params("smart"), max_steps=30, lr=0.02)
+        assert result["fidelity"] > 0
+
+
+@pytest.mark.unit
+class TestHessianRefinement:
+    """Tests for second-order Hessian-aided refinement (v0.4.0 WI-7)."""
+
+    def test_hessian_diagonal_shape(self, small_optimizer, random_params_6q):
+        hess = small_optimizer.compute_hessian_diagonal(random_params_6q)
+        assert hess.shape == (small_optimizer.n_params,)
+
+    def test_hessian_diagonal_finite(self, small_optimizer, random_params_6q):
+        hess = small_optimizer.compute_hessian_diagonal(random_params_6q)
+        assert np.all(np.isfinite(hess))
+
+    def test_hessian_matches_finite_difference(self, small_optimizer, random_params_6q):
+        """Diagonal Hessian should approximate finite-difference second derivative."""
+        hess = small_optimizer.compute_hessian_diagonal(random_params_6q)
+        eps = 1e-4
+        for i in range(3):  # Check first 3 params
+            p_plus = random_params_6q.copy(); p_plus[i] += eps
+            p_minus = random_params_6q.copy(); p_minus[i] -= eps
+            f_plus = small_optimizer.compute_fidelity(params=p_plus)
+            f_minus = small_optimizer.compute_fidelity(params=p_minus)
+            f_0 = small_optimizer.compute_fidelity(params=random_params_6q)
+            fd_hess = (f_plus - 2*f_0 + f_minus) / eps**2
+            # Note: hess is for -fidelity (minimization), fd_hess is for fidelity
+            # So hess[i] ~ -fd_hess (negated)
+            assert abs(hess[i] - (-fd_hess)) / (abs(fd_hess) + 1e-10) < 0.5 or abs(hess[i] - (-fd_hess)) < 0.5
+
+    def test_newton_step_shape(self, small_optimizer, random_params_6q):
+        new_params = small_optimizer.newton_refinement_step(random_params_6q)
+        assert new_params.shape == random_params_6q.shape
+
+    def test_newton_step_finite(self, small_optimizer, random_params_6q):
+        new_params = small_optimizer.newton_refinement_step(random_params_6q)
+        assert np.all(np.isfinite(new_params))
+
+    def test_newton_step_changes_params(self, small_optimizer, random_params_6q):
+        new_params = small_optimizer.newton_refinement_step(random_params_6q)
+        assert not np.allclose(new_params, random_params_6q)

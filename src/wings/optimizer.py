@@ -1,14 +1,10 @@
 """Main Gaussian state optimizer."""
 
 import copy
-import json
-import os
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from datetime import datetime
 from typing import Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from qiskit import QuantumCircuit, transpile
@@ -17,9 +13,10 @@ from qiskit.quantum_info import Statevector
 from scipy.optimize import basinhopping, differential_evolution, minimize
 
 from .adam import AdamOptimizer, AdamWithRestarts
+from .barren_plateau import BarrenPlateauDetector
 from .ansatz import DefaultAnsatz
 from .compat import HAS_CUSTATEVEC
-from .config import OptimizationPipeline, OptimizerConfig, TargetFunction
+from .config import OptimizationPipeline, OptimizerConfig, TargetFunction, _TRACY_WIDOM_TARGETS, _TW_BETA_MAP
 from .evaluators.cpu import ThreadSafeCircuitEvaluator
 from .evaluators.custatevec import (
     BatchedCuStateVecEvaluator,
@@ -67,7 +64,7 @@ class GaussianOptimizer:
         self._min_log_interval_sec = 2.0
 
         self._circuit_transpiled = transpile(
-            self.circuit, basis_gates=["ry", "cx", "x"], optimization_level=1
+            self.circuit, basis_gates=["ry", "rz", "cx", "x"], optimization_level=1
         )
         # Pre-store parameter vector as list for faster zip
         self._param_list = list(self.param_vector)
@@ -138,6 +135,21 @@ class GaussianOptimizer:
 
     def _compute_target_wavefunction(self) -> "ComplexArray":
         """Compute normalized target wavefunction based on config."""
+        # Warn if complex target is used with RY-only ansatz
+        if self.config.momentum != 0.0:
+            ansatz_name = type(self.config.ansatz).__name__ if self.config.ansatz else "DefaultAnsatz"
+            if ansatz_name == "DefaultAnsatz":
+                import warnings
+
+                warnings.warn(
+                    f"Complex target (momentum={self.config.momentum}) requires RZ gates "
+                    f"for phase encoding. The DefaultAnsatz (RY+CNOT only) cannot produce "
+                    f"complex amplitudes. Use CustomHardwareEfficientAnsatz with "
+                    f"rotation_gates=['ry', 'rz'] for best results.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
         x = self.positions
         dx = self.config.delta_x
 
@@ -147,12 +159,26 @@ class GaussianOptimizer:
             psi = self._lorentzian(x)
         elif self.config.target_function == TargetFunction.SECH:
             psi = self._sech(x)  # ADD THIS CASE
+        elif self.config.target_function == TargetFunction.GAUSSIAN_WAVEPACKET:
+            sigma = self.config.sigma
+            x0 = self.config.x0
+            k = self.config.momentum
+            psi = np.exp(-((x - x0) ** 2) / (2 * sigma**2)) * np.exp(1j * k * x)
+        elif self.config.target_function in _TRACY_WIDOM_TARGETS:
+            from .tracy_widom import tracy_widom_wavefunction
+            beta = _TW_BETA_MAP[self.config.target_function]
+            psi = tracy_widom_wavefunction(x, beta=beta)
         elif self.config.target_function == TargetFunction.CUSTOM:
             if self.config.custom_target_fn is None:
                 raise ValueError("custom_target_fn required for CUSTOM target")
             psi = self.config.custom_target_fn(x)
         else:
             raise ValueError(f"Unknown target function: {self.config.target_function}")
+
+        # Apply momentum phase if specified (for non-wavepacket targets)
+        if self.config.momentum != 0.0 and self.config.target_function != TargetFunction.GAUSSIAN_WAVEPACKET:
+            k = self.config.momentum
+            psi = psi * np.exp(1j * k * x)
 
         # Normalize
         psi = psi.astype(np.complex128)
@@ -177,17 +203,28 @@ class GaussianOptimizer:
         """Hyperbolic secant wavefunction (soliton-like)."""
         return 1.0 / np.cosh((x - self.config.x0) / self.config.sigma)
 
-    def get_statevector(self, params: ParameterArray, backend: str = "auto") -> ComplexArray:
+    def get_statevector(self, params: ParameterArray, backend: str = None) -> ComplexArray:
         """
         Get statevector with automatic backend selection.
 
         Args:
             params: Circuit parameters
-            backend: 'auto', 'custatevec', 'gpu', or 'cpu'
+            backend: None (use config), 'auto', 'jax', 'custatevec', 'gpu', or 'cpu'
 
         Returns:
             Statevector as numpy array
         """
+        if backend is None:
+            backend = self.config.backend if hasattr(self.config, 'backend') else "auto"
+
+        if backend == "jax":
+            from .evaluators.jax_backend import HAS_JAX
+            if not HAS_JAX:
+                raise ImportError("JAX not installed. Use backend='qiskit' or install jax.")
+            # JAX statevector path would go here
+            # For now, fall through to Qiskit (JAX integration is structural prep)
+            backend = "auto"
+
         if backend == "auto":
             if self.config.use_custatevec and self._custatevec_evaluator is not None:
                 backend = "custatevec"
@@ -350,9 +387,13 @@ class GaussianOptimizer:
 
     def _compute_fidelity_fast(self, psi_circuit: ComplexArray) -> float:
         """Optimized fidelity using pre-conjugated target"""
-        # Single dot product with pre-conjugated target
-        overlap = np.dot(self._target_conj, psi_circuit)
-        return overlap.real**2 + overlap.imag**2
+        from .fidelity import compute_fidelity_fast
+        return compute_fidelity_fast(self._target_conj, psi_circuit)
+
+    def _compute_infidelity_direct(self, psi_circuit: ComplexArray) -> float:
+        """Compute infidelity without catastrophic cancellation."""
+        from .fidelity import compute_infidelity_direct
+        return compute_infidelity_direct(self._target_conj, self.target, psi_circuit)
 
     def compute_gradient(self, params: np.ndarray, method: str = "auto") -> np.ndarray:
         """
@@ -392,6 +433,126 @@ class GaussianOptimizer:
             return self._compute_gradient_parallel_impl(params)
         else:
             return self._compute_gradient_sequential_impl(params)
+
+    def compute_gradient_stochastic(
+        self,
+        params: np.ndarray,
+        fraction: float = 0.5,
+        rng: np.random.Generator = None,
+    ) -> np.ndarray:
+        """
+        Stochastic parameter-shift gradient: sample a random subset of coordinates.
+
+        Only computes gradient for k = max(1, int(n_params * fraction)) randomly
+        chosen parameters. Unsampled components are set to 0.
+
+        With Adam's momentum, the missing components are interpolated from history,
+        providing convergence despite the sparse gradient signal.
+
+        Args:
+            params: Current parameters
+            fraction: Fraction of parameters to sample (0, 1]
+            rng: Optional random number generator for reproducibility
+
+        Returns:
+            Sparse gradient array (unsampled components are 0)
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+
+        n_params = len(params)
+        k = max(1, int(n_params * fraction))
+
+        if k >= n_params:
+            # Full gradient
+            return self.compute_gradient(params)
+
+        # Sample random subset of parameter indices
+        sampled_indices = rng.choice(n_params, size=k, replace=False)
+
+        gradient = np.zeros(n_params)
+        shift = np.pi / 2
+
+        for idx in sampled_indices:
+            params_plus = params.copy()
+            params_minus = params.copy()
+            params_plus[idx] += shift
+            params_minus[idx] -= shift
+
+            psi_plus = self.get_statevector(params_plus)
+            psi_minus = self.get_statevector(params_minus)
+
+            f_plus = self._compute_fidelity_fast(psi_plus)
+            f_minus = self._compute_fidelity_fast(psi_minus)
+
+            gradient[idx] = (f_plus - f_minus) / 2.0
+
+        # Return negative gradient (we minimize -fidelity), consistent with compute_gradient()
+        return -gradient
+
+    def compute_hessian_diagonal(self, params: np.ndarray) -> np.ndarray:
+        """
+        Compute the diagonal of the Hessian via second-order parameter-shift rule.
+
+        Uses Mari et al. (PRA 2021) Eq. 13:
+        d^2(-F)/dtheta_j^2 = -[F(theta+pi/2*e_j) - 2*F(theta) + F(theta-pi/2*e_j)] / 2
+
+        Cost: 2*n_params + 1 evaluations (same shifted states as gradient, plus f(theta)).
+        If gradient was already computed, only 1 extra evaluation needed.
+
+        Returns:
+            Diagonal Hessian of the -fidelity objective, shape (n_params,)
+        """
+        shift = np.pi / 2
+        n_params = len(params)
+
+        f_0 = self.compute_fidelity(params=params)
+
+        f_plus = np.zeros(n_params)
+        f_minus = np.zeros(n_params)
+
+        for i in range(n_params):
+            p_plus = params.copy()
+            p_plus[i] += shift
+            f_plus[i] = self.compute_fidelity(params=p_plus)
+
+            p_minus = params.copy()
+            p_minus[i] -= shift
+            f_minus[i] = self.compute_fidelity(params=p_minus)
+
+        # Hessian of fidelity: (f+ - 2*f0 + f-) / 2
+        # Hessian of -fidelity (our objective): negate
+        hess_diag = -(f_plus - 2 * f_0 + f_minus) / 2
+
+        return hess_diag
+
+    def newton_refinement_step(
+        self,
+        params: np.ndarray,
+        lr: float = 0.5,
+        epsilon: float = 1e-6,
+    ) -> np.ndarray:
+        """
+        One Newton-like refinement step using diagonal Hessian preconditioning.
+
+        delta = -lr * gradient / (|hess_diag| + epsilon)
+
+        Args:
+            params: Current parameters
+            lr: Learning rate (< 1 for stability)
+            epsilon: Regularization to prevent division by zero
+
+        Returns:
+            Updated parameters
+        """
+        gradient = self.compute_gradient(params)
+        hess_diag = self.compute_hessian_diagonal(params)
+
+        # Preconditioned step: scale each gradient component by inverse curvature
+        step = lr * gradient / (np.abs(hess_diag) + epsilon)
+
+        new_params = params - step
+        return np.clip(new_params, -2 * np.pi, 2 * np.pi)
 
     def _compute_gradient_sequential_impl(self, params: np.ndarray) -> np.ndarray:
         """
@@ -574,6 +735,254 @@ class GaussianOptimizer:
         # === Final Results ===
         return self._pipeline_finalize(pipeline, start_time)
 
+    def run_pipeline(
+        self, pipeline: "Pipeline" = None, initial_params: np.ndarray = None
+    ) -> dict:
+        """
+        Execute a composable optimization pipeline.
+
+        Each stage runs in order, receiving the best parameters from the
+        previous stage. Stops early if target_fidelity is reached or
+        max_total_time is exceeded.
+
+        Args:
+            pipeline: A Pipeline object with ordered stages.
+                      If None, uses Pipeline.standard().
+            initial_params: Starting parameters (None = determined by first stage)
+
+        Returns:
+            Results dictionary with optimal_params, fidelity, infidelity, time, etc.
+        """
+        from .pipeline import (
+            Pipeline, InitSearch, Adam, SPSA, NaturalGradient,
+            LBFGSB, BasinHopping, Newton, GrowCircuit,
+        )
+
+        if pipeline is None:
+            pipeline = Pipeline.standard()
+
+        start_time = time.time()
+        current_params = initial_params
+
+        if pipeline.verbose:
+            print(f"\n{'=' * 80}")
+            print("COMPOSABLE OPTIMIZATION PIPELINE")
+            print(f"{'=' * 80}")
+            print(pipeline.summary())
+            print(f"{'=' * 80}\n")
+
+        for i, stage in enumerate(pipeline.stages):
+            elapsed = time.time() - start_time
+
+            # Early stopping: target reached
+            if self.best_fidelity >= pipeline.target_fidelity:
+                if pipeline.verbose:
+                    print(f"\n  Target fidelity reached after stage {i}. Stopping.")
+                break
+
+            # Early stopping: time limit
+            if elapsed >= pipeline.max_total_time:
+                if pipeline.verbose:
+                    print(f"\n  Time limit reached ({elapsed:.0f}s). Stopping.")
+                break
+
+            stage_name = f"[{i + 1}/{len(pipeline.stages)}] {stage.describe()}"
+            if pipeline.verbose:
+                print(f"\n{'=' * 60}")
+                print(f"STAGE: {stage_name}")
+                print(f"{'=' * 60}")
+
+            remaining_time = pipeline.max_total_time - elapsed
+
+            # ----------------------------------------------------------
+            # Dispatch by stage type
+            # ----------------------------------------------------------
+            if isinstance(stage, InitSearch):
+                best_fid = 0
+                best_p = current_params
+                for j, strategy in enumerate(stage.strategies):
+                    np.random.seed(42 + j)
+                    p = self.get_initial_params(strategy)
+                    fid = self.compute_fidelity(params=p)
+                    if pipeline.verbose:
+                        print(f"  {strategy:20s}: F = {fid:.8f}")
+                    if fid > best_fid:
+                        best_fid = fid
+                        best_p = p.copy()
+                if current_params is None or best_fid > self.best_fidelity:
+                    current_params = best_p
+
+            elif isinstance(stage, Adam):
+                if current_params is None:
+                    current_params = self.get_initial_params("smart")
+                max_t = stage.max_time if stage.max_time else remaining_time * 0.8
+                old_fraction = self.config.gradient_sample_fraction
+                if stage.gradient_fraction < 1.0:
+                    self.config.gradient_sample_fraction = stage.gradient_fraction
+                result = self.optimize_adam(
+                    current_params,
+                    max_steps=stage.max_steps,
+                    lr=stage.lr,
+                    max_time=max_t,
+                    convergence_window=stage.convergence_window,
+                    convergence_threshold=stage.convergence_threshold,
+                )
+                self.config.gradient_sample_fraction = old_fraction
+                current_params = result["params"]
+
+            elif isinstance(stage, SPSA):
+                if current_params is None:
+                    current_params = self.get_initial_params("smart")
+                max_t = stage.max_time if stage.max_time else remaining_time * 0.8
+                result = self.optimize_spsa(
+                    current_params,
+                    max_steps=stage.max_steps,
+                    a=stage.a,
+                    c=stage.c,
+                    A=stage.A,
+                    n_avg=stage.n_avg,
+                    max_time=max_t,
+                )
+                current_params = result["params"]
+
+            elif isinstance(stage, NaturalGradient):
+                if current_params is None:
+                    current_params = self.get_initial_params("smart")
+                max_t = stage.max_time if stage.max_time else remaining_time * 0.8
+                result = self.optimize_natural_gradient(
+                    current_params,
+                    max_steps=stage.max_steps,
+                    lr=stage.lr,
+                    regularization=stage.regularization,
+                    max_time=max_t,
+                )
+                current_params = result["params"]
+
+            elif isinstance(stage, LBFGSB):
+                if current_params is None:
+                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                for tol in stage.tolerances:
+                    if self.best_fidelity >= pipeline.target_fidelity:
+                        break
+                    if time.time() - start_time > pipeline.max_total_time * 0.95:
+                        break
+                    if (
+                        stage.use_log_objective
+                        and self.best_fidelity > stage.log_threshold
+                    ):
+                        if pipeline.verbose:
+                            print(f"  L-BFGS-B (tol={tol:.0e}, log objective)...")
+                        lbfgs_opts = {
+                            "maxiter": stage.max_iter, "ftol": tol,
+                            "gtol": tol, "disp": False,
+                        }
+                        if self.config.high_precision:
+                            lbfgs_opts["maxcor"] = 30
+                            lbfgs_opts["maxls"] = 40
+                        result = minimize(
+                            self.objective_and_gradient_log_infidelity,
+                            self.best_params,
+                            method="L-BFGS-B",
+                            jac=True,
+                            bounds=[(-2 * np.pi, 2 * np.pi)] * self.n_params,
+                            options=lbfgs_opts,
+                        )
+                        psi = self.get_statevector(result.x)
+                        fid = self._compute_fidelity_fast(psi)
+                        if fid > self.best_fidelity:
+                            self.best_fidelity = fid
+                            self.best_params = result.x.copy()
+                    else:
+                        if pipeline.verbose:
+                            print(f"  L-BFGS-B (tol={tol:.0e})...")
+                        self.config.gtol = tol
+                        self.optimize_stage(
+                            self.best_params, f"L-BFGS-B (tol={tol:.0e})",
+                            max_iter=stage.max_iter, tolerance=tol,
+                        )
+                    if pipeline.verbose:
+                        print(f"    F = {self.best_fidelity:.15f}")
+                current_params = self.best_params
+
+            elif isinstance(stage, BasinHopping):
+                if current_params is None:
+                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                self.optimize_basin_hopping(
+                    current_params,
+                    n_iterations=stage.n_iterations,
+                    temperature=stage.temperature,
+                    step_size=stage.step_size,
+                )
+                current_params = self.best_params
+
+            elif isinstance(stage, Newton):
+                if current_params is None:
+                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                for step in range(stage.max_steps):
+                    current_params = self.newton_refinement_step(
+                        current_params, lr=stage.lr, epsilon=stage.epsilon,
+                    )
+                    fid = self.compute_fidelity(params=current_params)
+                    if fid > self.best_fidelity:
+                        self.best_fidelity = fid
+                        self.best_params = current_params.copy()
+                    if pipeline.verbose and step % 10 == 0:
+                        print(f"  Newton step {step}: F={fid:.12f}")
+                current_params = self.best_params
+
+            elif isinstance(stage, GrowCircuit):
+                if current_params is None:
+                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                current_params = self.grow_circuit(current_params)
+                if pipeline.verbose:
+                    print(f"  Circuit grown to depth {self.ansatz.depth}, n_params={self.n_params}")
+
+            if pipeline.verbose and self.best_fidelity > 0:
+                print(f"  -> Best F = {self.best_fidelity:.12f} (1-F = {1 - self.best_fidelity:.3e})")
+
+        # Finalize
+        total_time = time.time() - start_time
+        if self.best_params is not None:
+            final_psi = self.get_statevector(self.best_params)
+            final_fidelity = self._compute_fidelity_fast(final_psi)
+            final_infidelity = self._compute_infidelity_direct(final_psi)
+            circuit_stats = self.compute_statistics(final_psi)
+        else:
+            final_psi = None
+            final_fidelity = 0.0
+            final_infidelity = 1.0
+            circuit_stats = {"mean": 0.0, "std": 0.0, "variance": 0.0}
+
+        results = {
+            "optimal_params": self.best_params,
+            "fidelity": final_fidelity,
+            "infidelity": final_infidelity,
+            "circuit_mean": circuit_stats["mean"],
+            "circuit_std": circuit_stats["std"],
+            "target_mean": self.config.x0,
+            "target_std": self.config.sigma,
+            "time": total_time,
+            "n_evaluations": self.n_evals,
+            "success": final_fidelity >= pipeline.target_fidelity,
+            "final_statevector": final_psi,
+            "circuit_stats": circuit_stats,
+            "n_stages_completed": min(i + 1, len(pipeline.stages)),
+        }
+
+        if pipeline.verbose:
+            print(f"\n{'=' * 80}")
+            print("PIPELINE COMPLETE")
+            print(f"{'=' * 80}")
+            print(f"  Final fidelity:      {final_fidelity:.15f}")
+            print(f"  Infidelity:          {final_infidelity:.3e}")
+            print(f"  Target:              {pipeline.target_infidelity:.3e}")
+            print(f"  Success:             {'Yes' if results['success'] else 'No'}")
+            print(f"  Time:                {total_time:.1f}s")
+            print(f"  Stages completed:    {results['n_stages_completed']}/{len(pipeline.stages)}")
+            print(f"  Total evaluations:   {self.n_evals}")
+
+        return results
+
     def _pipeline_init_search(
         self, pipeline: OptimizationPipeline, initial_params: np.ndarray, _start_time: float
     ) -> np.ndarray:
@@ -688,9 +1097,45 @@ class GaussianOptimizer:
                 print(f"\n  Refinement pass (tol={tol:.0e})...")
 
             self.config.gtol = tol
-            self.optimize_stage(
-                self.best_params, f"Refinement (tol={tol:.0e})", max_iter=3000, tolerance=tol
-            )
+
+            # Use log-infidelity objective when enabled and fidelity is high enough
+            if (
+                pipeline.use_log_objective
+                and self.best_fidelity > pipeline.log_objective_threshold
+            ):
+                if pipeline.verbose:
+                    print("    Using log-infidelity objective")
+                lbfgs_options = {
+                    "maxiter": 3000,
+                    "maxfun": self.config.max_fun,
+                    "ftol": tol,
+                    "gtol": tol,
+                    "disp": self.config.verbose,
+                }
+                if self.config.high_precision:
+                    lbfgs_options["maxcor"] = 30
+                    lbfgs_options["maxls"] = 40
+                result = minimize(
+                    self.objective_and_gradient_log_infidelity,
+                    self.best_params,
+                    method="L-BFGS-B",
+                    jac=True,
+                    bounds=[(-2 * np.pi, 2 * np.pi)] * self.n_params,
+                    options=lbfgs_options,
+                )
+                # Update best from result
+                psi = self.get_statevector(result.x)
+                fidelity = self._compute_fidelity_fast(psi)
+                if fidelity > self.best_fidelity:
+                    self.best_fidelity = fidelity
+                    self.best_params = result.x.copy()
+            else:
+                self.optimize_stage(
+                    self.best_params,
+                    f"Refinement (tol={tol:.0e})",
+                    max_iter=3000,
+                    tolerance=tol,
+                )
 
             if pipeline.verbose:
                 print(f"    F = {self.best_fidelity:.15f}")
@@ -745,7 +1190,7 @@ class GaussianOptimizer:
         results = {
             "optimal_params": self.best_params,
             "fidelity": final_fidelity,
-            "infidelity": 1 - final_fidelity,
+            "infidelity": self._compute_infidelity_direct(final_psi),
             "circuit_mean": circuit_stats["mean"],
             "circuit_std": circuit_stats["std"],
             "target_mean": self.config.x0,
@@ -826,6 +1271,87 @@ class GaussianOptimizer:
         # Return negative for minimization
         return -fidelity
 
+    def objective_log_infidelity(self, params: np.ndarray) -> float:
+        """
+        Log-infidelity objective: log(1-F).
+
+        This objective has well-scaled gradients even at extreme fidelities:
+        d/dtheta log(1-F) = -1/(1-F) * dF/dtheta
+
+        The 1/(1-F) amplification keeps gradients informative as F -> 1.
+        Uses np.log for numerical stability.
+        """
+        self.n_evals += 1
+        psi_circuit = self.get_statevector(params)
+        infidelity = self._compute_infidelity_direct(psi_circuit)
+
+        # Track best
+        fidelity = 1.0 - infidelity
+        if fidelity > self.best_fidelity:
+            self.best_fidelity = fidelity
+            self.best_params = params.copy()
+
+        if infidelity <= 0.0:
+            return -40.0  # log(~1e-17), floor to avoid -inf
+
+        return np.log(infidelity)  # = log(1-F), negative and decreasing is good
+
+    def objective_and_gradient_log_infidelity(self, params: np.ndarray) -> tuple:
+        """
+        Compute log-infidelity and its gradient simultaneously.
+
+        Gradient: d/dtheta log(1-F) = -1/(1-F) * dF/dtheta
+        where dF/dtheta comes from the parameter-shift rule.
+        """
+        # First compute infidelity at current params
+        psi = self.get_statevector(params)
+        infidelity = self._compute_infidelity_direct(psi)
+        fidelity = 1.0 - infidelity
+
+        # Track best
+        if fidelity > self.best_fidelity:
+            self.best_fidelity = fidelity
+            self.best_params = params.copy()
+
+        if infidelity <= 0.0:
+            return -40.0, np.zeros_like(params)
+
+        log_infidelity = np.log(infidelity)
+
+        # Compute standard fidelity gradient via parameter-shift
+        fidelity_gradient = self.compute_gradient(params)
+
+        # Chain rule: d/dtheta log(1-F) = -1/(1-F) * dF/dtheta
+        # compute_gradient returns -dF/dtheta (gradient of -F for minimization),
+        # so: d/dtheta log(1-F) = (1/(1-F)) * (-dF/dtheta) = amplification * fidelity_gradient
+        # Clip the amplification to prevent numerical explosion
+        amplification = min(1.0 / infidelity, 1e12)
+        log_gradient = amplification * fidelity_gradient
+
+        return log_infidelity, log_gradient
+
+    def grow_circuit(self, current_params: np.ndarray) -> np.ndarray:
+        """Grow the circuit by one layer, preserving existing parameters."""
+        from .ansatz import DefaultAnsatz
+        if not isinstance(self.ansatz, DefaultAnsatz):
+            raise TypeError(f"Adaptive depth only supports DefaultAnsatz. Got {type(self.ansatz).__name__}")
+
+        old_depth = self.ansatz.depth
+        new_depth = old_depth + 1
+        n = self.config.n_qubits
+        entanglement = getattr(self.ansatz, "_entanglement", "linear")
+
+        self.ansatz = DefaultAnsatz(n, depth=new_depth, entanglement=entanglement)
+        self.n_params = self.ansatz.n_params
+
+        self.param_vector = ParameterVector("theta", self.n_params)
+        self.circuit = self.ansatz(self.param_vector, n, **(self.config.ansatz_kwargs or {}))
+        self._circuit_transpiled = transpile(self.circuit, basis_gates=["ry", "rz", "cx", "x"], optimization_level=1)
+        self._param_list = list(self.param_vector)
+
+        new_layer_params = np.random.randn(n) * 0.01
+        return np.concatenate([current_params, new_layer_params])
+
     def get_initial_params(self, strategy="smart", scale_factor=1.0):
         """
         Generate initial parameters with physics-informed strategies.
@@ -897,6 +1423,13 @@ class GaussianOptimizer:
             # Small perturbations for refinement from current best
             params = scale_factor * np.random.randn(self.n_params)
 
+        elif strategy == "mps":
+            from .mps_init import mps_initial_params
+            params = mps_initial_params(self.target, self.config.n_qubits)
+            # Ensure correct length
+            if len(params) != self.n_params:
+                params = np.resize(params, self.n_params)
+
         elif strategy == "perturb_best":
             # Perturb from current best (if available)
             if self.best_params is not None:
@@ -959,28 +1492,18 @@ class GaussianOptimizer:
         shift = np.pi / 2
         n_params = self.n_params
 
-        # Build all shifted parameter sets at once
+        # Build all shifted parameter sets at once (vectorized)
         # Shape: (2 * n_params, n_params)
-        params_shifted = np.zeros((2 * n_params, n_params))
-
-        for i in range(n_params):
-            # Forward shift
-            params_shifted[2 * i] = params.copy()
-            params_shifted[2 * i, i] += shift
-
-            # Backward shift
-            params_shifted[2 * i + 1] = params.copy()
-            params_shifted[2 * i + 1, i] -= shift
+        params_shifted = np.tile(params, (2 * n_params, 1))
+        idx = np.arange(n_params)
+        params_shifted[2 * idx, idx] += shift
+        params_shifted[2 * idx + 1, idx] -= shift
 
         # Single batched GPU call for all shifts
         fidelities = self._gpu_evaluator.compute_fidelities_batched(params_shifted)
 
-        # Compute gradients from shift results
-        gradient = np.zeros(n_params)
-        for i in range(n_params):
-            fid_plus = fidelities[2 * i]
-            fid_minus = fidelities[2 * i + 1]
-            gradient[i] = (fid_plus - fid_minus) / 2
+        # Compute gradients from shift results (vectorized)
+        gradient = (fidelities[0::2] - fidelities[1::2]) / 2
 
         # Return negative gradient (we minimize -fidelity)
         return -gradient
@@ -1075,6 +1598,9 @@ class GaussianOptimizer:
         params = initial_params.copy()
         optimizer = AdamWithRestarts(self.n_params, lr_max=lr, lr_min=lr / 50, restart_period=200)
 
+        # Barren plateau detection
+        bp_detector = BarrenPlateauDetector(self.n_params)
+
         # Tracking
         fidelity_history = []
         best_fidelity = 0
@@ -1101,7 +1627,13 @@ class GaussianOptimizer:
             else:
                 psi = self.get_statevector(params)
                 fidelity = self._compute_fidelity_fast(psi)
-                gradient = self._compute_gradient_sequential_impl(params)
+                # Use stochastic gradient when configured
+                if self.config.gradient_sample_fraction < 1.0:
+                    gradient = self.compute_gradient_stochastic(
+                        params, fraction=self.config.gradient_sample_fraction
+                    )
+                else:
+                    gradient = self._compute_gradient_sequential_impl(params)
 
             # Track best
             if fidelity > best_fidelity:
@@ -1109,6 +1641,16 @@ class GaussianOptimizer:
                 best_params = params.copy()
 
             fidelity_history.append(fidelity)
+
+            # Barren plateau check
+            bp_detector.update(gradient, fidelity)
+            if bp_detector.is_barren_plateau():
+                print(f"  Step {step}: Barren plateau detected, performing random restart")
+                params = self.get_initial_params("random")
+                optimizer = AdamWithRestarts(
+                    self.n_params, lr_max=lr, lr_min=lr / 50, restart_period=200
+                )
+                bp_detector.reset()
 
             # Convergence check
             if len(fidelity_history) > convergence_window:
@@ -1145,6 +1687,203 @@ class GaussianOptimizer:
             self.best_params = best_params
 
         print(f"\nAdam complete: F={best_fidelity:.12f} in {elapsed:.1f}s ({step + 1} steps)")
+
+        return {
+            "params": best_params,
+            "fidelity": best_fidelity,
+            "history": fidelity_history,
+            "steps": step + 1,
+            "time": elapsed,
+        }
+
+    def optimize_spsa(
+        self,
+        initial_params: np.ndarray,
+        max_steps: int = 5000,
+        a: float = 0.1,
+        c: float = 0.1,
+        A: float = None,
+        n_avg: int = 1,
+        max_time: float = None,
+        convergence_window: int = 200,
+        convergence_threshold: float = 1e-8,
+        verbose_interval: int = 100,
+    ) -> dict:
+        """
+        SPSA optimization -- estimates gradient from only 2 evaluations per step.
+
+        Particularly effective for large parameter counts where parameter-shift
+        gradients (2*n_params evaluations) are expensive.
+
+        Args:
+            initial_params: Starting parameters
+            max_steps: Maximum SPSA steps
+            a: Step size parameter
+            c: Perturbation size parameter
+            A: Stability constant (default: 0.1 * max_steps)
+            n_avg: Number of perturbation averages per step (default: 1)
+            max_time: Time limit in seconds
+            convergence_window: Steps to check for convergence
+            convergence_threshold: Minimum improvement to continue
+            verbose_interval: Print progress every N steps
+
+        Returns:
+            Dictionary with optimization results
+        """
+        from .spsa import SPSAOptimizer
+
+        start_time = time.time()
+
+        if A is None:
+            A = 0.1 * max_steps
+
+        print(f"\nSPSA Optimization (a={a}, c={c}, max_steps={max_steps}, n_avg={n_avg})")
+        print("-" * 50)
+
+        params = initial_params.copy()
+        spsa = SPSAOptimizer(self.n_params, a=a, c=c, A=A, n_avg=n_avg)
+
+        fidelity_history = []
+        best_fidelity = 0.0
+        best_params = params.copy()
+        total_evals = 0
+
+        for step in range(max_steps):
+            if max_time is not None and (time.time() - start_time) > max_time:
+                print(f"  Time limit reached at step {step}")
+                break
+
+            # SPSA step (minimizes -fidelity)
+            params, g_hat, n_evals = spsa.step(params, self.objective)
+            total_evals += n_evals
+
+            # Keep parameters bounded
+            params = np.clip(params, -2 * np.pi, 2 * np.pi)
+
+            # Evaluate current fidelity (not counted in total_evals;
+            # total_evals only tracks SPSA gradient evaluations)
+            psi = self.get_statevector(params)
+            fidelity = self._compute_fidelity_fast(psi)
+
+            if fidelity > best_fidelity:
+                best_fidelity = fidelity
+                best_params = params.copy()
+
+            fidelity_history.append(fidelity)
+
+            # Convergence check
+            if len(fidelity_history) > convergence_window:
+                recent_improvement = max(fidelity_history[-convergence_window:]) - min(
+                    fidelity_history[-convergence_window:]
+                )
+                if recent_improvement < convergence_threshold and fidelity > 0.99:
+                    print(f"  Converged at step {step}")
+                    break
+
+            # Progress
+            if step % verbose_interval == 0:
+                grad_norm = np.linalg.norm(g_hat)
+                print(f"  Step {step:5d}: F={fidelity:.10f}, |g|={grad_norm:.2e}")
+
+        elapsed = time.time() - start_time
+
+        # Update instance tracking
+        # Note: self.objective already increments self.n_evals for each
+        # SPSA perturbation evaluation. Only add the extra fidelity checks.
+        self.n_evals += step + 1  # one get_statevector+fidelity check per step
+        if best_fidelity > self.best_fidelity:
+            self.best_fidelity = best_fidelity
+            self.best_params = best_params
+
+        print(
+            f"\nSPSA complete: F={best_fidelity:.12f} in {elapsed:.1f}s "
+            f"({step + 1} steps, {total_evals} evals)"
+        )
+
+        return {
+            "params": best_params,
+            "fidelity": best_fidelity,
+            "history": fidelity_history,
+            "steps": step + 1,
+            "total_evals": total_evals,
+            "time": elapsed,
+        }
+
+    def optimize_natural_gradient(
+        self,
+        initial_params: np.ndarray,
+        max_steps: int = 500,
+        lr: float = 0.01,
+        regularization: float = 0.001,
+        max_time: float = None,
+        verbose_interval: int = 50,
+    ) -> dict:
+        """
+        Natural gradient descent using diagonal Quantum Fisher Information.
+
+        Uses Adam with the natural gradient (Euclidean gradient rescaled by
+        the inverse diagonal QFIM) for geometry-aware optimization on the
+        quantum state manifold.
+
+        Args:
+            initial_params: Starting parameters
+            max_steps: Maximum optimization steps
+            lr: Adam learning rate
+            regularization: Tikhonov regularization for QFIM diagonal
+            max_time: Time limit in seconds (None = no limit)
+            verbose_interval: Print progress every N steps
+
+        Returns:
+            Dictionary with optimization results
+        """
+        from .natural_gradient import compute_natural_gradient
+
+        start_time = time.time()
+        print(f"\nNatural Gradient Optimization (lr={lr}, reg={regularization}, max_steps={max_steps})")
+        print("-" * 50)
+
+        params = initial_params.copy()
+        adam = AdamOptimizer(self.n_params, learning_rate=lr)
+
+        best_fidelity = 0.0
+        best_params = params.copy()
+        fidelity_history = []
+
+        for step in range(max_steps):
+            if max_time is not None and (time.time() - start_time) > max_time:
+                print(f"  Time limit reached at step {step}")
+                break
+
+            # Compute fidelity
+            psi = self.get_statevector(params)
+            fidelity = self._compute_fidelity_fast(psi)
+
+            if fidelity > best_fidelity:
+                best_fidelity = fidelity
+                best_params = params.copy()
+
+            fidelity_history.append(fidelity)
+
+            # Compute natural gradient
+            nat_grad = compute_natural_gradient(self, params, regularization=regularization)
+
+            # Progress logging
+            if step % verbose_interval == 0:
+                grad_norm = np.linalg.norm(nat_grad)
+                print(f"  Step {step:5d}: F={fidelity:.10f}, |nat_grad|={grad_norm:.2e}")
+
+            # Adam update with natural gradient
+            params = adam.step(params, nat_grad)
+            params = np.clip(params, -2 * np.pi, 2 * np.pi)
+
+        elapsed = time.time() - start_time
+        self.n_evals += step + 1
+
+        if best_fidelity > self.best_fidelity:
+            self.best_fidelity = best_fidelity
+            self.best_params = best_params
+
+        print(f"\nNatural gradient complete: F={best_fidelity:.12f} in {elapsed:.1f}s ({step + 1} steps)")
 
         return {
             "params": best_params,
@@ -1645,221 +2384,42 @@ class GaussianOptimizer:
         }
 
     def plot_results(self, results: dict, save_path: Optional[str] = None):
-        """Create visualization plots with high precision display"""
-        try:
-            fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+        """Create visualization plots with high precision display."""
+        from .visualization import plot_optimization_results
 
-            x = self.positions
-            psi_circuit = results["final_statevector"]
-            psi_target = self.target
-
-            # Plot 1: Probability densities (log scale option for high precision)
-            ax = axes[0, 0]
-            ax.plot(x, np.abs(psi_circuit) ** 2, "b-", label="Circuit", linewidth=2)
-            ax.plot(
-                x, np.abs(psi_target) ** 2, "r--", label="Target Gaussian", linewidth=2, alpha=0.8
-            )
-            ax.set_xlabel("Position x", fontsize=11)
-            ax.set_ylabel("|ψ(x)|²", fontsize=11)
-            ax.set_title(
-                f"Probability Density (Fidelity = {results['fidelity']:.10f})", fontsize=12
-            )
-            ax.legend(fontsize=10)
-            ax.grid(True, alpha=0.3)
-
-            # Plot 2: Real and imaginary parts
-            ax = axes[0, 1]
-            ax.plot(x, np.real(psi_circuit), "b-", label="Circuit (Real)", linewidth=1.5)
-            ax.plot(
-                x, np.imag(psi_circuit), "b--", label="Circuit (Imag)", linewidth=1.5, alpha=0.7
-            )
-            ax.plot(x, np.real(psi_target), "r-", label="Target (Real)", linewidth=1.5, alpha=0.8)
-            ax.plot(x, np.imag(psi_target), "r--", label="Target (Imag)", linewidth=1.5, alpha=0.5)
-            ax.set_xlabel("Position x", fontsize=11)
-            ax.set_ylabel("Amplitude", fontsize=11)
-            ax.set_title("Wavefunction Components", fontsize=12)
-            ax.legend(fontsize=9)
-            ax.grid(True, alpha=0.3)
-
-            # Plot 3: Difference (log scale for high precision)
-            ax = axes[1, 0]
-            difference = np.abs(psi_circuit - psi_target) ** 2
-            max_diff = np.max(difference)
-            ax.plot(x, difference, "g-", linewidth=2)
-            ax.set_xlabel("Position x", fontsize=11)
-            ax.set_ylabel("|ψ_circuit - ψ_target|²", fontsize=11)
-            ax.set_title(f"Squared Difference (max = {max_diff:.3e})", fontsize=12)
-            ax.set_yscale("log")
-            ax.grid(True, alpha=0.3, which="both")
-
-            # Plot 4: Convergence with infidelity tracking
-            ax = axes[1, 1]
-            if len(self.history["fidelity"]) > 0:
-                fidelities = np.array(self.history["fidelity"])
-                infidelities = 1 - fidelities
-
-                # Plot on log scale to see high precision improvement
-                ax.semilogy(
-                    self.history["iteration"], infidelities, "g-", linewidth=1.5, label="Infidelity"
-                )
-                ax.axhline(y=1e-3, color="r", linestyle="--", alpha=0.5, label="F=0.999")
-                ax.axhline(y=1e-4, color="orange", linestyle="--", alpha=0.5, label="F=0.9999")
-                ax.axhline(
-                    y=results["infidelity"],
-                    color="blue",
-                    linestyle="-",
-                    alpha=0.7,
-                    label=f"Final: 1-F={results['infidelity']:.2e}",
-                )
-                ax.set_xlabel("Function Evaluation", fontsize=11)
-                ax.set_ylabel("Infidelity (1 - F)", fontsize=11)
-                ax.set_title("Optimization Progress (Log Scale)", fontsize=12)
-                ax.legend(fontsize=9)
-                ax.grid(True, alpha=0.3, which="both")
-
-            # Add high-precision statistics text
-            stats_text = (
-                f"High Precision Results:\n"
-                f"Fidelity:    {results['fidelity']:.12f}\n"
-                f"Infidelity:  {results['infidelity']:.3e}\n"
-                f"Circuit: μ={results['circuit_mean']:.8f}, σ={results['circuit_std']:.8f}\n"
-                f"Target:  μ={results['target_mean']:.8f}, σ={results['target_std']:.8f}\n"
-                f"Errors:  Δμ={results['mean_error']:.3e}, Δσ={results['std_error']:.3e}\n"
-                f"Rel. σ error: {results['relative_std_error'] * 100:.2f}%\n"
-                f"Time: {results['time']:.1f}s, Evals: {results['n_evaluations']}"
-            )
-            fig.text(
-                0.02,
-                0.02,
-                stats_text,
-                fontsize=9,
-                family="monospace",
-                bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.6},
-            )
-
-            plt.suptitle(
-                f"High Precision Gaussian State (n={self.config.n_qubits}, σ={self.config.sigma:.4f}, box=±{self.config.box_size:.2f})",
-                fontsize=14,
-                fontweight="bold",
-            )
-            plt.tight_layout()
-
-            if save_path:
-                try:
-                    plt.savefig(save_path, dpi=200, bbox_inches="tight")
-                    print(f"Plot saved to: {save_path}")
-                except Exception as e:
-                    print(f"Warning: Could not save plot: {e}")
-
-            plt.show()
-
-            return fig
-
-        except Exception as e:
-            print(f"Warning: Could not create plot: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return None
+        return plot_optimization_results(
+            self.positions,
+            results["final_statevector"],
+            self.target,
+            results,
+            self.history,
+            self.config.n_qubits,
+            self.config.sigma,
+            self.config.box_size,
+            save_path,
+        )
 
     def save_results(self, results: dict, filepath: str = None):
-        """Save high-precision parameters to text file"""
-        if filepath is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = f"gaussian_highprec_q{self.config.n_qubits}_s{self.config.sigma:.4f}_{timestamp}.txt"
+        """Save high-precision parameters to text file."""
+        from .visualization import save_optimization_results
 
-        try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write("=" * 80 + "\n")
-                f.write("HIGH PRECISION GAUSSIAN STATE PREPARATION\n")
-                f.write("=" * 80 + "\n\n")
-
-                f.write("CONFIGURATION\n")
-                f.write("-" * 40 + "\n")
-                f.write(f"Timestamp:          {datetime.now().isoformat()}\n")
-                f.write(f"Number of qubits:   {self.config.n_qubits}\n")
-                f.write(f"Number of params:   {self.config.n_params}\n")
-                f.write(f"Target sigma:       {self.config.sigma:.10f}\n")
-                f.write(f"Target x0:          {self.config.x0:.10f}\n")
-                f.write(f"Box size:           +/-{self.config.box_size:.6f}\n")
-                f.write(f"Grid points:        {self.config.n_states}\n")
-                f.write(f"Grid spacing:       {self.config.delta_x:.10f}\n")
-                f.write(f"Optimizer:          {self.config.method}\n")
-                f.write(f"Max iterations:     {self.config.max_iter}\n")
-                f.write(f"Max fun evals:      {self.config.max_fun}\n")
-                f.write(f"Tolerance:          {self.config.tolerance:.2e}\n")
-                f.write(f"High precision:     {self.config.high_precision}\n")
-                f.write(f"Refinement enabled: {self.config.enable_refinement}\n\n")
-
-                f.write("HIGH PRECISION RESULTS\n")
-                f.write("-" * 40 + "\n")
-                f.write(f"Fidelity:           {results['fidelity']:.15f}\n")
-                f.write(f"Infidelity (1-F):   {results['infidelity']:.3e}\n")
-                f.write(f"Circuit mean:       {results['circuit_mean']:.12f}\n")
-                f.write(f"Circuit std:        {results['circuit_std']:.12f}\n")
-                f.write(f"Target mean:        {results['target_mean']:.12f}\n")
-                f.write(f"Target std:         {results['target_std']:.12f}\n")
-                f.write(f"Error in mean:      {results['mean_error']:.3e}\n")
-                f.write(f"Error in std:       {results['std_error']:.3e}\n")
-                f.write(f"Relative std err:   {results['relative_std_error'] * 100:.4f}%\n")
-                f.write(f"Optimization time:  {results['time']:.2f} seconds\n")
-                f.write(f"Function evals:     {results['n_evaluations']}\n")
-                f.write(f"Success:            {results['success']}\n")
-                f.write(f"Message:            {results.get('optimizer_message', 'N/A')}\n\n")
-
-                f.write("OPTIMAL PARAMETERS (15 decimal places)\n")
-                f.write("-" * 40 + "\n")
-                f.write("# Index    Value\n")
-                params = results["optimal_params"]
-                for i, param in enumerate(params):
-                    f.write(f"{i:5d}    {param:+.15f}\n")
-
-                f.write("\n" + "=" * 80 + "\n")
-                f.write("# To load parameters:\n")
-                f.write(
-                    f"# params = np.loadtxt('{os.path.basename(filepath)}', skiprows=N, usecols=1)\n"
-                )
-
-            print(f"\nResults saved to: {filepath}")
-
-            # Save numpy array with full precision
-            np_file = filepath.replace(".txt", "_params.npy")
-            np.save(np_file, results["optimal_params"])
-            print(f"Parameters saved to: {np_file}")
-
-            # Save JSON with results
-            json_file = filepath.replace(".txt", "_results.json")
-            json_data = {
-                "fidelity": float(results["fidelity"]),
-                "infidelity": float(results["infidelity"]),
-                "circuit_mean": float(results["circuit_mean"]),
-                "circuit_std": float(results["circuit_std"]),
-                "target_mean": float(results["target_mean"]),
-                "target_std": float(results["target_std"]),
-                "mean_error": float(results["mean_error"]),
-                "std_error": float(results["std_error"]),
-                "time": float(results["time"]),
-                "n_evaluations": int(results["n_evaluations"]),
-                "config": {
-                    "n_qubits": self.config.n_qubits,
-                    "sigma": self.config.sigma,
-                    "x0": self.config.x0,
-                    "box_size": self.config.box_size,
-                    "method": self.config.method,
-                    "high_precision": self.config.high_precision,
-                },
-            }
-            with open(json_file, "w") as f:
-                json.dump(json_data, f, indent=2)
-            print(f"JSON results saved to: {json_file}")
-
-        except Exception as e:
-            print(f"Error saving results: {e}")
-            import traceback
-
-            traceback.print_exc()
-
-        return filepath
+        config_dict = {
+            "n_qubits": self.config.n_qubits,
+            "sigma": self.config.sigma,
+            "x0": self.config.x0,
+            "box_size": self.config.box_size,
+            "method": self.config.method,
+            "high_precision": self.config.high_precision,
+            "n_params": self.config.n_params,
+            "n_states": self.config.n_states,
+            "delta_x": self.config.delta_x,
+            "tolerance": self.config.tolerance,
+            "max_iter": self.config.max_iter,
+            "max_fun": self.config.max_fun,
+            "enable_refinement": self.config.enable_refinement,
+            "verbose": self.config.verbose,
+        }
+        return save_optimization_results(results, config_dict, filepath)
 
     def get_optimized_circuit(
         self,

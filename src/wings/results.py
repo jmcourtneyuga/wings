@@ -3,7 +3,7 @@
 import json
 import os
 import pickle
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import numpy as np
@@ -14,6 +14,7 @@ from .config import CampaignConfig
 __all__ = [
     "RunResult",
     "CampaignResults",
+    "OptimizationResult",
 ]
 
 
@@ -253,3 +254,50 @@ class CampaignResults:
         """Load results from disk"""
         with open(filepath, "rb") as f:
             return pickle.load(f)
+
+
+@dataclass
+class OptimizationResult:
+    """
+    Standardized result from any optimization method.
+
+    All optimization methods (optimize_adam, optimize_spsa, run_pipeline, etc.)
+    return this structure. Access fields directly or convert to dict with asdict().
+    """
+
+    optimal_params: np.ndarray
+    fidelity: float
+    infidelity: float
+    time: float
+    n_evaluations: int
+    success: bool
+    n_stages_completed: int = 0
+    circuit_stats: dict = field(default_factory=dict)
+    history: list = field(default_factory=list)
+    final_statevector: Optional[np.ndarray] = None
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Convert to plain dictionary (backward compatible)."""
+        d = {
+            "optimal_params": self.optimal_params,
+            "fidelity": self.fidelity,
+            "infidelity": self.infidelity,
+            "time": self.time,
+            "n_evaluations": self.n_evaluations,
+            "success": self.success,
+            "n_stages_completed": self.n_stages_completed,
+            "circuit_stats": self.circuit_stats,
+            "history": self.history,
+            "final_statevector": self.final_statevector,
+        }
+        d.update(self.metadata)
+        return d
+
+    def __getitem__(self, key):
+        """Dict-like access for backward compatibility."""
+        return self.to_dict()[key]
+
+    def __contains__(self, key):
+        """Support 'key in result' syntax."""
+        return key in self.to_dict()

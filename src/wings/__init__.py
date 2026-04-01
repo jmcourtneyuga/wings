@@ -56,7 +56,7 @@ See Also
 - GitHub: https://github.com/yourusername/gaussian-state-optimizer
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 __author__ = "Joshua M. Courtney"
 __email__ = "joshuamcourtney@gmail.com"
 __license__ = "MIT"
@@ -74,6 +74,16 @@ def __getattr__(name: str):
         "GaussianOptimizer": ".optimizer",
         "OptimizerConfig": ".config",
         "OptimizationPipeline": ".config",
+        # Composable pipeline
+        "Pipeline": ".pipeline",
+        "InitSearch": ".pipeline",
+        "Adam": ".pipeline",
+        "SPSA": ".pipeline",
+        "NaturalGradient": ".pipeline",
+        "LBFGSB": ".pipeline",
+        "BasinHopping": ".pipeline",
+        "Newton": ".pipeline",
+        "GrowCircuit": ".pipeline",
         "CampaignConfig": ".config",
         "CampaignResults": ".campaign",
         "OptimizationManager": ".campaign",
@@ -82,6 +92,9 @@ def __getattr__(name: str):
         "DefaultAnsatz": ".ansatz",
         "CustomHardwareEfficientAnsatz": ".ansatz",
         "AnsatzProtocol": ".ansatz",
+        # Ansatz library
+        "EfficientSU2Ansatz": ".ansatz_library",
+        "generate_entanglement_map": ".ansatz_library",
         # Evaluators
         "CuStateVecEvaluator": ".evaluators.custatevec",
         "BatchedCuStateVecEvaluator": ".evaluators.custatevec",
@@ -111,6 +124,61 @@ def __getattr__(name: str):
         "export_to_qasm": ".export",
         "export_to_qasm3": ".export",
         "save_circuit": ".export",
+        # SPSA optimizer
+        "SPSAOptimizer": ".spsa",
+        # Barren plateau detection
+        "BarrenPlateauDetector": ".barren_plateau",
+        # Warm-start transfer learning
+        "transfer_params": ".warm_start",
+        # Natural gradient
+        "compute_qfim_diagonal": ".natural_gradient",
+        "compute_natural_gradient": ".natural_gradient",
+        # Fidelity utilities
+        "compute_fidelity_fast": ".fidelity",
+        "compute_infidelity_direct": ".fidelity",
+        # MPS initialization
+        "mps_decompose": ".mps_init",
+        "mps_to_statevector": ".mps_init",
+        "mps_initial_params": ".mps_init",
+        # Tracy-Widom distributions
+        "tracy_widom_pdf": ".tracy_widom",
+        "tracy_widom_wavefunction": ".tracy_widom",
+        "list_tracy_widom_targets": ".tracy_widom",
+        # Wavefunction library
+        "harmonic_oscillator_eigenstate": ".wavefunctions",
+        "superposition_of_gaussians": ".wavefunctions",
+        "airy_wavefunction": ".wavefunctions",
+        "morse_oscillator_eigenstate": ".wavefunctions",
+        "squeezed_gaussian": ".wavefunctions",
+        "plane_wave_packet": ".wavefunctions",
+        "list_wavefunctions": ".wavefunctions",
+        # Visualization / export
+        "plot_optimization_results": ".visualization",
+        "save_optimization_results": ".visualization",
+        # Dashboard
+        "OptimizationDashboard": ".dashboard",
+        # JAX autodiff backend
+        "compute_gradient_jax_default_ansatz": ".evaluators.jax_backend",
+        # Multi-dimensional grids
+        "NDGrid": ".nd_grid",
+        "gaussian_nd": ".nd_grid",
+        # Noise-aware optimization
+        "NoiseConfig": ".evaluators.noisy",
+        # Time evolution (v0.4.0 WI-4)
+        "split_operator_step": ".time_evolution",
+        "evolve_classical": ".time_evolution",
+        "make_grid": ".time_evolution",
+        "free_particle": ".time_evolution",
+        "harmonic_potential": ".time_evolution",
+        "morse_potential": ".time_evolution",
+        "lennard_jones_potential": ".time_evolution",
+        # Hardware-native execution (v0.4.0 WI-5)
+        "transpile_for_hardware": ".hardware",
+        "classical_state_fidelity": ".hardware",
+        "counts_to_probabilities": ".hardware",
+        "HardwareResult": ".hardware",
+        # Result dataclass (v1.0.0)
+        "OptimizationResult": ".results",
     }
 
     if name in _public_api:
@@ -136,10 +204,22 @@ __all__ = [
     "CampaignConfig",
     "CampaignResults",
     "OptimizationManager",
+    # Composable pipeline
+    "Pipeline",
+    "InitSearch",
+    "Adam",
+    "SPSA",
+    "NaturalGradient",
+    "LBFGSB",
+    "BasinHopping",
+    "Newton",
+    "GrowCircuit",
     # Ansatz
     "DefaultAnsatz",
     "CustomHardwareEfficientAnsatz",
     "AnsatzProtocol",
+    "EfficientSU2Ansatz",
+    "generate_entanglement_map",
     # Evaluators
     "CuStateVecEvaluator",
     "BatchedCuStateVecEvaluator",
@@ -168,6 +248,61 @@ __all__ = [
     "export_to_qasm",
     "export_to_qasm3",
     "save_circuit",
+    # SPSA optimizer
+    "SPSAOptimizer",
+    # Barren plateau detection
+    "BarrenPlateauDetector",
+    # Warm-start transfer learning
+    "transfer_params",
+    # Natural gradient
+    "compute_qfim_diagonal",
+    "compute_natural_gradient",
+    # Fidelity utilities
+    "compute_fidelity_fast",
+    "compute_infidelity_direct",
+    # MPS initialization
+    "mps_decompose",
+    "mps_to_statevector",
+    "mps_initial_params",
+    # Wavefunction library
+    "harmonic_oscillator_eigenstate",
+    "superposition_of_gaussians",
+    "airy_wavefunction",
+    "morse_oscillator_eigenstate",
+    "squeezed_gaussian",
+    "plane_wave_packet",
+    "list_wavefunctions",
+    # Tracy-Widom distributions
+    "tracy_widom_pdf",
+    "tracy_widom_wavefunction",
+    "list_tracy_widom_targets",
+    # Visualization / export
+    "plot_optimization_results",
+    "save_optimization_results",
+    # Dashboard
+    "OptimizationDashboard",
+    # JAX autodiff backend
+    "compute_gradient_jax_default_ansatz",
+    # Multi-dimensional grids
+    "NDGrid",
+    "gaussian_nd",
+    # Noise-aware optimization
+    "NoiseConfig",
+    # Time evolution (v0.4.0 WI-4)
+    "split_operator_step",
+    "evolve_classical",
+    "make_grid",
+    "free_particle",
+    "harmonic_potential",
+    "morse_potential",
+    "lennard_jones_potential",
+    # Hardware-native execution (v0.4.0 WI-5)
+    "transpile_for_hardware",
+    "classical_state_fidelity",
+    "counts_to_probabilities",
+    "HardwareResult",
+    # Result dataclass (v1.0.0)
+    "OptimizationResult",
 ]
 
 

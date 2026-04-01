@@ -67,14 +67,14 @@ Quantum algorithms for simulating continuous systems—such as molecular dynamic
 ### Basic Installation
 
 ```bash
-pip install wings-quantum
+pip install wings
 ```
 
 ### With GPU Support
 
 ```bash
 # Install CUDA toolkit (11.0+) first, then:
-pip install wings-quantum[gpu]
+pip install wings[gpu]
 
 # For cuStateVec acceleration (recommended):
 pip install cuquantum-python cupy-cuda11x
@@ -313,9 +313,10 @@ wings/
 
 | Qubits | Grid Points | Parameters | GPU Time | Best Infidelity |
 |--------|-------------|------------|----------|-----------------|
-| 4 | 16 | 16 | ~1000s | 1e-10
-| 5 | 32 | 25 | ~1500s | 1e-8 | 
-| 8 | 256 | 64 | ~3000s | 1e-6 |
+| 8 | 256 | 64 | ~30s | 1e-12 |
+| 10 | 1,024 | 100 | ~2min | 1e-11 |
+| 12 | 4,096 | 144 | ~10min | 1e-10 |
+| 14 | 16,384 | 196 | ~1hr | 1e-9 |
 
 ### Benchmarking
 

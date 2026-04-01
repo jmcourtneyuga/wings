@@ -15,6 +15,7 @@ def optimize_gaussian_state(
     n_qubits: int = 8,
     sigma: float = 1.0,
     x0: float = 0.0,
+    momentum: float = 0.0,
     box_size: Optional[float] = None,
     target_function: "TargetFunction" = None,
     gamma: Optional[float] = None,
@@ -117,6 +118,7 @@ def optimize_gaussian_state(
         n_qubits=n_qubits,
         sigma=sigma,
         x0=x0,
+        momentum=momentum,
         box_size=box_size,
         # Target function
         target_function=target_function,
@@ -216,6 +218,7 @@ def quick_optimize(
     n_qubits: int,
     sigma: float,
     x0: float = 0.0,
+    momentum: float = 0.0,
     target_function: "TargetFunction" = None,
     verbose: bool = True,
 ) -> tuple[float, dict[str, Any]]:
@@ -249,6 +252,7 @@ def quick_optimize(
         n_qubits=n_qubits,
         sigma=sigma,
         x0=x0,
+        momentum=momentum,
         target_function=target_function,
         target_infidelity=1e-10,
         max_time=300,  # 5 minutes
