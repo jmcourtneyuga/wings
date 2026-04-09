@@ -42,7 +42,7 @@ WINGS supports four acceleration tiers. The optimizer selects the best available
 ### CPU Only (no GPU required)
 
 ```bash
-pip install wings
+pip install wings-quantum
 ```
 
 Dependencies installed: `qiskit>=1.0`, `numpy>=1.20`, `scipy>=1.7`, `matplotlib>=3.5`
@@ -52,7 +52,7 @@ Dependencies installed: `qiskit>=1.0`, `numpy>=1.20`, `scipy>=1.7`, `matplotlib>
 Requires NVIDIA GPU with CUDA 11.0+ drivers installed.
 
 ```bash
-pip install wings[gpu]
+pip install wings-quantum[gpu]
 ```
 
 This installs `qiskit-aer>=0.13` with CUDA support. Verify CUDA is accessible:
@@ -66,7 +66,7 @@ nvidia-smi  # Should show your GPU
 Requires NVIDIA GPU with CUDA 11.0+ and cuQuantum SDK.
 
 ```bash
-pip install wings[gpu]
+pip install wings-quantum[gpu]
 pip install cuquantum-python>=23.0 cupy-cuda11x>=12.0
 ```
 
