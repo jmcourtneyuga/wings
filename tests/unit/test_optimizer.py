@@ -418,11 +418,11 @@ class TestGaussianOptimizerStatistics:
 class TestGaussianOptimizerAdam:
     """Tests for Adam optimization."""
 
-    def test_optimize_adam_basic(self, small_optimizer, random_params_6q):
+    def test_optimize_adam_basic(self, tiny_optimizer, random_params_3q):
         """Test basic Adam optimization."""
-        result = small_optimizer.optimize_adam(
-            random_params_6q,
-            max_steps=50,
+        result = tiny_optimizer.optimize_adam(
+            random_params_3q,
+            max_steps=20,
             lr=0.01,
         )
 
@@ -430,24 +430,24 @@ class TestGaussianOptimizerAdam:
         assert "fidelity" in result
         assert result["fidelity"] > 0
 
-    def test_optimize_adam_improves_fidelity(self, small_optimizer, random_params_6q):
+    def test_optimize_adam_improves_fidelity(self, tiny_optimizer, random_params_3q):
         """Test Adam improves fidelity."""
-        initial_fid = small_optimizer.compute_fidelity(params=random_params_6q)
+        initial_fid = tiny_optimizer.compute_fidelity(params=random_params_3q)
 
-        result = small_optimizer.optimize_adam(
-            random_params_6q,
-            max_steps=100,
+        result = tiny_optimizer.optimize_adam(
+            random_params_3q,
+            max_steps=50,
             lr=0.02,
         )
 
         assert result["fidelity"] >= initial_fid
 
-    def test_optimize_adam_max_time(self, small_optimizer, random_params_6q):
+    def test_optimize_adam_max_time(self, tiny_optimizer, random_params_3q):
         """Test Adam respects max_time parameter."""
         start = time.time()
 
-        result = small_optimizer.optimize_adam(
-            random_params_6q,
+        result = tiny_optimizer.optimize_adam(
+            random_params_3q,
             max_steps=100000,  # Very high, should hit time limit first
             lr=0.01,
             max_time=2.0,  # 2 seconds max
@@ -459,19 +459,19 @@ class TestGaussianOptimizerAdam:
         assert elapsed < 5.0  # Allow some overhead
         assert "fidelity" in result
 
-    def test_optimize_adam_updates_n_evals(self, small_optimizer, random_params_6q):
+    def test_optimize_adam_updates_n_evals(self, tiny_optimizer, random_params_3q):
         """Test Adam updates evaluation counter."""
-        result = small_optimizer.optimize_adam(random_params_6q, max_steps=10)
+        result = tiny_optimizer.optimize_adam(random_params_3q, max_steps=10)
         assert result.get("steps", 0) >= 10
 
-    def test_optimize_adam_convergence_check(self, small_optimizer):
+    def test_optimize_adam_convergence_check(self, tiny_optimizer):
         """Test Adam convergence detection."""
         # Use smart init for faster convergence
-        params = small_optimizer.get_initial_params("smart")
+        params = tiny_optimizer.get_initial_params("smart")
 
-        result = small_optimizer.optimize_adam(
+        result = tiny_optimizer.optimize_adam(
             params,
-            max_steps=500,
+            max_steps=200,
             lr=0.02,
             convergence_window=20,
             convergence_threshold=1e-6,
@@ -484,7 +484,7 @@ class TestGaussianOptimizerAdam:
 class TestGaussianOptimizerPipeline:
     """Tests for optimization pipeline."""
 
-    def test_run_optimization_basic(self, small_optimizer):
+    def test_run_optimization_basic(self, tiny_optimizer):
         """Test basic optimization run."""
         from wings.config import OptimizationPipeline
 
@@ -496,7 +496,7 @@ class TestGaussianOptimizerPipeline:
             verbose=False,
         )
 
-        results = small_optimizer.run_optimization(pipeline)
+        results = tiny_optimizer.run_optimization(pipeline)
 
         assert "fidelity" in results
         assert "optimal_params" in results
@@ -504,7 +504,7 @@ class TestGaussianOptimizerPipeline:
         assert "n_evaluations" in results
         assert results["fidelity"] > 0.5
 
-    def test_run_optimization_with_adam(self, small_optimizer):
+    def test_run_optimization_with_adam(self, tiny_optimizer):
         """Test pipeline with Adam stage."""
         from wings.config import OptimizationPipeline
 
@@ -512,17 +512,17 @@ class TestGaussianOptimizerPipeline:
             target_fidelity=0.95,
             max_total_time=30,
             use_adam_stage=True,
-            adam_max_steps=100,
+            adam_max_steps=50,
             adam_time_fraction=0.5,
             verbose=False,
         )
 
-        results = small_optimizer.run_optimization(pipeline)
+        results = tiny_optimizer.run_optimization(pipeline)
 
         assert results["fidelity"] > 0.5
         assert results["n_evaluations"] > 0
 
-    def test_pipeline_adam_time_limit(self, small_optimizer):
+    def test_pipeline_adam_time_limit(self, tiny_optimizer):
         """Test Adam stage respects time fraction."""
         from wings.config import OptimizationPipeline
 
@@ -537,14 +537,14 @@ class TestGaussianOptimizerPipeline:
         )
 
         start = time.time()
-        results = small_optimizer.run_optimization(pipeline)
+        results = tiny_optimizer.run_optimization(pipeline)
         total_time = time.time() - start
 
         # Total should be around max_total_time (with some margin)
         assert total_time < 30  # Shouldn't run forever
         assert "fidelity" in results
 
-    def test_run_optimization_returns_n_evaluations(self, small_optimizer):
+    def test_run_optimization_returns_n_evaluations(self, tiny_optimizer):
         """Test that n_evaluations is tracked and returned."""
         from wings.config import OptimizationPipeline
 
@@ -552,11 +552,11 @@ class TestGaussianOptimizerPipeline:
             target_fidelity=0.9,
             max_total_time=20,
             use_adam_stage=True,
-            adam_max_steps=50,
+            adam_max_steps=30,
             verbose=False,
         )
 
-        results = small_optimizer.run_optimization(pipeline)
+        results = tiny_optimizer.run_optimization(pipeline)
 
         assert "n_evaluations" in results
         assert results["n_evaluations"] > 0
@@ -567,25 +567,25 @@ class TestGaussianOptimizerPipeline:
 class TestGaussianOptimizerOptimizationSlow:
     """Slow tests for actual optimization runs."""
 
-    def test_objective_decreases(self, small_optimizer, random_params_6q):
+    def test_objective_decreases(self, tiny_optimizer, random_params_3q):
         """Test that optimization makes progress."""
-        initial_fid = small_optimizer.compute_fidelity(params=random_params_6q)
+        initial_fid = tiny_optimizer.compute_fidelity(params=random_params_3q)
 
         # Run a few optimization steps manually
         from scipy.optimize import minimize
 
         result = minimize(
-            small_optimizer.objective,
-            random_params_6q,
+            tiny_optimizer.objective,
+            random_params_3q,
             method="L-BFGS-B",
-            jac=lambda p: small_optimizer.compute_gradient(p),
+            jac=lambda p: tiny_optimizer.compute_gradient(p),
             options={"maxiter": 50},
         )
 
         final_fid = -result.fun
         assert final_fid >= initial_fid
 
-    def test_high_fidelity_achievable(self, small_optimizer):
+    def test_high_fidelity_achievable(self, tiny_optimizer):
         """Test that high fidelity is achievable."""
         from wings.config import OptimizationPipeline
 
@@ -593,12 +593,12 @@ class TestGaussianOptimizerOptimizationSlow:
             target_fidelity=0.99,
             max_total_time=60,
             use_adam_stage=True,
-            adam_max_steps=1000,
+            adam_max_steps=200,
             use_lbfgs_refinement=True,
             verbose=False,
         )
 
-        results = small_optimizer.run_optimization(pipeline)
+        results = tiny_optimizer.run_optimization(pipeline)
 
         assert results["fidelity"] > 0.95
 
@@ -1053,18 +1053,18 @@ class TestV030Integration:
         from wings import GaussianOptimizer, OptimizerConfig
         from wings.warm_start import transfer_params
 
-        config_6 = OptimizerConfig(
-            n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
+        config_3 = OptimizerConfig(
+            n_qubits=3, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
         )
-        opt_6 = GaussianOptimizer(config_6)
-        r6 = opt_6.optimize_adam(opt_6.get_initial_params("smart"), max_steps=50, lr=0.02)
-        params_8 = transfer_params(r6["params"], 6, 8)
-        config_8 = OptimizerConfig(
-            n_qubits=8, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
+        opt_3 = GaussianOptimizer(config_3)
+        r3 = opt_3.optimize_adam(opt_3.get_initial_params("smart"), max_steps=30, lr=0.02)
+        params_4 = transfer_params(r3["params"], 3, 4)
+        config_4 = OptimizerConfig(
+            n_qubits=4, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
         )
-        opt_8 = GaussianOptimizer(config_8)
-        r8 = opt_8.optimize_adam(params_8, max_steps=50, lr=0.02)
-        assert r8["fidelity"] > 0
+        opt_4 = GaussianOptimizer(config_4)
+        r4 = opt_4.optimize_adam(params_4, max_steps=30, lr=0.02)
+        assert r4["fidelity"] > 0
 
     def test_barren_plateau_detector_in_adam(self):
         """Adam optimization should include barren plateau monitoring."""

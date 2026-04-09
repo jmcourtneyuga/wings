@@ -70,18 +70,29 @@ def _fidelity_from_mps(state, n_qubits, bond_dim):
     return np.abs(np.vdot(state, recon)) ** 2
 
 
+@pytest.fixture
+def gaussian_state_4q():
+    """Normalized Gaussian on 4-qubit grid."""
+    n = 4
+    x = np.linspace(-4, 4, 2**n)
+    psi = np.exp(-(x**2) / (2 * 0.5**2))
+    psi = psi.astype(np.complex128)
+    psi /= np.linalg.norm(psi)
+    return psi
+
+
 @pytest.mark.unit
 class TestMPSInitialParams:
-    def test_mps_initial_params_shape(self, gaussian_state_8q):
+    def test_mps_initial_params_shape(self, gaussian_state_4q):
         from wings.mps_init import mps_initial_params
 
-        params = mps_initial_params(gaussian_state_8q, n_qubits=8)
-        assert params.shape == (64,)  # 8*8 for DefaultAnsatz
+        params = mps_initial_params(gaussian_state_4q, n_qubits=4)
+        assert params.shape == (16,)  # 4*4 for DefaultAnsatz
 
-    def test_mps_initial_params_finite(self, gaussian_state_8q):
+    def test_mps_initial_params_finite(self, gaussian_state_4q):
         from wings.mps_init import mps_initial_params
 
-        params = mps_initial_params(gaussian_state_8q, n_qubits=8)
+        params = mps_initial_params(gaussian_state_4q, n_qubits=4)
         assert np.all(np.isfinite(params))
 
     def test_mps_strategy_in_optimizer(self):

@@ -157,23 +157,23 @@ class TestPipelineComposition:
 class TestRunPipeline:
     """Tests for optimizer.run_pipeline() execution."""
 
-    def test_quick_pipeline_runs(self, small_optimizer):
+    def test_quick_pipeline_runs(self, tiny_optimizer):
         from wings.pipeline import Pipeline
 
         p = Pipeline.quick(target_fidelity=0.9, max_time=30)
-        results = small_optimizer.run_pipeline(p)
+        results = tiny_optimizer.run_pipeline(p)
         assert "fidelity" in results
         assert "optimal_params" in results
         assert "time" in results
         assert "n_stages_completed" in results
         assert results["fidelity"] > 0
 
-    def test_default_pipeline_runs(self, small_optimizer):
+    def test_default_pipeline_runs(self, tiny_optimizer):
         """run_pipeline() with no args should use Pipeline.standard()."""
-        results = small_optimizer.run_pipeline()
+        results = tiny_optimizer.run_pipeline()
         assert results["fidelity"] > 0
 
-    def test_custom_two_stage_pipeline(self, small_optimizer):
+    def test_custom_two_stage_pipeline(self, tiny_optimizer):
         from wings.pipeline import Adam, InitSearch, Pipeline
 
         p = Pipeline(
@@ -181,15 +181,15 @@ class TestRunPipeline:
             max_total_time=30,
             stages=[
                 InitSearch(strategies=["smart", "random"]),
-                Adam(max_steps=100, lr=0.02),
+                Adam(max_steps=50, lr=0.02),
             ],
             verbose=False,
         )
-        results = small_optimizer.run_pipeline(p)
+        results = tiny_optimizer.run_pipeline(p)
         assert results["fidelity"] > 0.3
         assert results["n_stages_completed"] >= 1
 
-    def test_early_stopping_on_target(self, small_optimizer):
+    def test_early_stopping_on_target(self, tiny_optimizer):
         """Pipeline should stop early if target is already met."""
         from wings.pipeline import Adam, InitSearch, Pipeline
 
@@ -199,14 +199,14 @@ class TestRunPipeline:
             max_total_time=60,
             stages=[
                 InitSearch(strategies=["smart"]),
-                Adam(max_steps=1000),  # Should be skipped
+                Adam(max_steps=100),  # Should be skipped
             ],
             verbose=False,
         )
-        results = small_optimizer.run_pipeline(p)
+        results = tiny_optimizer.run_pipeline(p)
         assert results["success"]
 
-    def test_spsa_stage_in_pipeline(self, small_optimizer):
+    def test_spsa_stage_in_pipeline(self, tiny_optimizer):
         from wings.pipeline import SPSA, Pipeline
 
         p = Pipeline(
@@ -215,10 +215,10 @@ class TestRunPipeline:
             stages=[SPSA(max_steps=50, a=0.05, c=0.1)],
             verbose=False,
         )
-        results = small_optimizer.run_pipeline(p)
+        results = tiny_optimizer.run_pipeline(p)
         assert results["fidelity"] > 0
 
-    def test_newton_stage_in_pipeline(self, small_optimizer):
+    def test_newton_stage_in_pipeline(self, tiny_optimizer):
         from wings.pipeline import Adam, InitSearch, Newton, Pipeline
 
         p = Pipeline(
@@ -226,20 +226,20 @@ class TestRunPipeline:
             max_total_time=60,
             stages=[
                 InitSearch(strategies=["smart"]),
-                Adam(max_steps=100, lr=0.02),
+                Adam(max_steps=50, lr=0.02),
                 Newton(max_steps=5, lr=0.3),
             ],
             verbose=False,
         )
-        results = small_optimizer.run_pipeline(p)
+        results = tiny_optimizer.run_pipeline(p)
         assert results["fidelity"] > 0
 
-    def test_results_dict_complete(self, small_optimizer):
+    def test_results_dict_complete(self, tiny_optimizer):
         from wings.pipeline import Pipeline
 
         p = Pipeline.quick(target_fidelity=0.9, max_time=20)
         p.verbose = False
-        results = small_optimizer.run_pipeline(p)
+        results = tiny_optimizer.run_pipeline(p)
         expected_keys = [
             "optimal_params",
             "fidelity",

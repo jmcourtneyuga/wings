@@ -265,10 +265,10 @@ class TestOptimizationManager:
         from wings.config import CampaignConfig
 
         config = CampaignConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
             total_runs=1,
-            max_iter_per_run=50,
+            max_iter_per_run=30,
             use_ultra_precision=False,
             verbose=0,
             output_dir=str(temp_output_dir),
@@ -309,18 +309,18 @@ class TestOptimizationManager:
         from wings.config import CampaignConfig
 
         config = CampaignConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
-            total_runs=5,
-            max_iter_per_run=30,
+            total_runs=3,
+            max_iter_per_run=10,
             verbose=0,
             output_dir=str(temp_output_dir),
             checkpoint_dir=str(temp_checkpoint_dir),
         )
 
-        # Run a few optimizations
+        # Run a couple of optimizations
         manager = OptimizationManager(config)
-        for i in range(3):
+        for i in range(2):
             result = manager._run_single_optimization(i)
             manager.results.add_result(result)
             manager._completed_runs.add(i)
@@ -329,10 +329,10 @@ class TestOptimizationManager:
 
         # Create new manager with resume
         config2 = CampaignConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
-            total_runs=5,
-            max_iter_per_run=30,
+            total_runs=3,
+            max_iter_per_run=10,
             verbose=0,
             output_dir=str(temp_output_dir),
             checkpoint_dir=str(temp_checkpoint_dir),
@@ -341,7 +341,7 @@ class TestOptimizationManager:
 
         manager2 = OptimizationManager(config2)
 
-        assert len(manager2._completed_runs) == 3
+        assert len(manager2._completed_runs) == 2
 
 
 class TestConvenienceFunctions:

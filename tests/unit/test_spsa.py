@@ -165,10 +165,10 @@ class TestSPSAOptimizer:
 class TestOptimizeSPSA:
     """Tests for GaussianOptimizer.optimize_spsa()."""
 
-    def test_optimize_spsa_basic(self, small_optimizer, random_params_6q):
+    def test_optimize_spsa_basic(self, tiny_optimizer, random_params_3q):
         """Test basic SPSA optimization returns correct structure."""
-        result = small_optimizer.optimize_spsa(
-            random_params_6q,
+        result = tiny_optimizer.optimize_spsa(
+            random_params_3q,
             max_steps=50,
             a=0.05,
             c=0.1,
@@ -182,27 +182,27 @@ class TestOptimizeSPSA:
         assert "time" in result
         assert result["fidelity"] > 0
 
-    def test_optimize_spsa_improves_fidelity(self, small_optimizer, random_params_6q):
+    def test_optimize_spsa_improves_fidelity(self, tiny_optimizer, random_params_3q):
         """Test SPSA improves fidelity from initial params."""
-        initial_fid = small_optimizer.compute_fidelity(params=random_params_6q)
+        initial_fid = tiny_optimizer.compute_fidelity(params=random_params_3q)
 
-        result = small_optimizer.optimize_spsa(
-            random_params_6q,
-            max_steps=200,
+        result = tiny_optimizer.optimize_spsa(
+            random_params_3q,
+            max_steps=100,
             a=0.05,
             c=0.1,
         )
 
         assert result["fidelity"] >= initial_fid
 
-    def test_optimize_spsa_max_time(self, small_optimizer, random_params_6q):
+    def test_optimize_spsa_max_time(self, tiny_optimizer, random_params_3q):
         """Test SPSA respects max_time parameter."""
         import time
 
         start = time.time()
 
-        result = small_optimizer.optimize_spsa(
-            random_params_6q,
+        result = tiny_optimizer.optimize_spsa(
+            random_params_3q,
             max_steps=100000,
             max_time=2.0,
         )
@@ -211,11 +211,11 @@ class TestOptimizeSPSA:
         assert elapsed < 5.0
         assert "fidelity" in result
 
-    def test_optimize_spsa_eval_efficiency(self, small_optimizer):
+    def test_optimize_spsa_eval_efficiency(self, tiny_optimizer):
         """Test SPSA uses far fewer evals than parameter-shift per step."""
-        params = small_optimizer.get_initial_params("smart")
+        params = tiny_optimizer.get_initial_params("smart")
 
-        result = small_optimizer.optimize_spsa(
+        result = tiny_optimizer.optimize_spsa(
             params,
             max_steps=10,
             n_avg=1,
@@ -223,5 +223,5 @@ class TestOptimizeSPSA:
 
         # With n_avg=1: 2 evals for SPSA gradient + 1 for fidelity check = 3 per step
         # 10 steps should use ~30 evals (plus some from objective calls inside SPSA)
-        # Parameter-shift would use 2*36 = 72 evals per gradient
-        assert result["total_evals"] < 10 * 2 * small_optimizer.n_params
+        # Parameter-shift would use 2*n_params evals per gradient
+        assert result["total_evals"] < 10 * 2 * tiny_optimizer.n_params

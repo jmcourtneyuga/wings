@@ -148,6 +148,10 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
 # ============================================================================
 # MyPy Configuration
 # ============================================================================

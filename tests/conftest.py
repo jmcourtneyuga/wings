@@ -133,6 +133,27 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture
+def tiny_config():
+    """Tiny configuration for optimization convergence tests (3 qubits).
+
+    Only 9 parameters, so gradient steps are ~4x faster than small_config.
+    Use this for tests that run multiple optimization steps.
+    """
+    from wings import OptimizerConfig
+
+    return OptimizerConfig(
+        n_qubits=3,
+        sigma=0.5,
+        box_size=4.0,
+        verbose=False,
+        use_gpu=False,
+        use_custatevec=False,
+        max_iter=100,
+        max_fun=200,
+    )
+
+
+@pytest.fixture
 def small_config():
     """Small configuration for fast tests (6 qubits)."""
     from wings import OptimizerConfig
@@ -254,6 +275,14 @@ def shifted_config():
 
 
 @pytest.fixture
+def tiny_optimizer(tiny_config):
+    """Tiny optimizer (3 qubits) for optimization convergence tests."""
+    from wings import GaussianOptimizer
+
+    return GaussianOptimizer(tiny_config)
+
+
+@pytest.fixture
 def small_optimizer(small_config):
     """Small optimizer for fast tests."""
     from wings import GaussianOptimizer
@@ -272,6 +301,13 @@ def medium_optimizer(medium_config):
 # ============================================================================
 # FIXTURES: Test Data
 # ============================================================================
+
+
+@pytest.fixture
+def random_params_3q():
+    """Random parameters for 3-qubit circuit."""
+    np.random.seed(42)
+    return np.random.randn(9) * 0.1  # 3*3 = 9 params
 
 
 @pytest.fixture
