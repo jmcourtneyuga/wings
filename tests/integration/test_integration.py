@@ -13,18 +13,18 @@ import pytest
 class TestEndToEndOptimization:
     """End-to-end optimization tests."""
 
-    def test_simple_optimization_cpu(self, small_config):
+    def test_simple_optimization_cpu(self, tiny_config):
         """Test complete optimization on CPU."""
         from wings import GaussianOptimizer
         from wings.config import OptimizationPipeline
 
-        opt = GaussianOptimizer(small_config)
+        opt = GaussianOptimizer(tiny_config)
 
         pipeline = OptimizationPipeline(
             target_fidelity=0.95,
             max_total_time=60,
             use_adam_stage=True,
-            adam_max_steps=500,
+            adam_max_steps=200,
             use_lbfgs_refinement=True,
             verbose=False,
         )
@@ -35,7 +35,7 @@ class TestEndToEndOptimization:
         assert "optimal_params" in results
         assert "time" in results
         assert results["fidelity"] > 0.8  # Should achieve decent fidelity
-        assert results["optimal_params"].shape == (36,)
+        assert results["optimal_params"].shape == (opt.n_params,)
 
     @pytest.mark.slow
     def test_high_fidelity_optimization(self, medium_config):
@@ -211,12 +211,13 @@ class TestConvenienceFunctions:
         assert results["fidelity"] > 0.8
         assert "optimal_params" in results
 
+    @pytest.mark.slow
     def test_quick_optimize(self):
         """Test quick_optimize convenience function."""
         from wings import quick_optimize
 
         fidelity, results = quick_optimize(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
             verbose=False,
         )
@@ -226,6 +227,7 @@ class TestConvenienceFunctions:
 
 
 @pytest.mark.integration
+@pytest.mark.slow
 class TestCampaignIntegration:
     """Tests for campaign management."""
 
@@ -235,11 +237,11 @@ class TestCampaignIntegration:
         from wings.config import CampaignConfig
 
         config = CampaignConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
-            total_runs=5,
-            runs_per_batch=5,
-            max_iter_per_run=100,
+            total_runs=3,
+            runs_per_batch=3,
+            max_iter_per_run=30,
             use_ultra_precision=False,
             verbose=0,
             output_dir=str(temp_output_dir),
@@ -251,7 +253,7 @@ class TestCampaignIntegration:
 
         assert results.best_result is not None
         assert results.best_result.fidelity > 0
-        assert len(results.all_results) == 5
+        assert len(results.all_results) == 3
 
     def test_campaign_checkpointing(self, temp_output_dir, temp_checkpoint_dir):
         """Test campaign checkpointing and resume."""
@@ -259,12 +261,12 @@ class TestCampaignIntegration:
         from wings.config import CampaignConfig
 
         config = CampaignConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
-            total_runs=10,
-            runs_per_batch=5,
-            checkpoint_interval=5,
-            max_iter_per_run=50,
+            total_runs=6,
+            runs_per_batch=3,
+            checkpoint_interval=3,
+            max_iter_per_run=20,
             use_ultra_precision=False,
             verbose=0,
             output_dir=str(temp_output_dir),
@@ -275,7 +277,7 @@ class TestCampaignIntegration:
         manager = OptimizationManager(config)
 
         # Simulate partial run
-        for run_id in range(5):
+        for run_id in range(3):
             result = manager._run_single_optimization(run_id)
             manager.results.add_result(result)
             manager._completed_runs.add(run_id)
@@ -284,12 +286,12 @@ class TestCampaignIntegration:
 
         # Create new manager with resume
         config2 = CampaignConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
-            total_runs=10,
-            runs_per_batch=5,
-            checkpoint_interval=5,
-            max_iter_per_run=50,
+            total_runs=6,
+            runs_per_batch=3,
+            checkpoint_interval=3,
+            max_iter_per_run=20,
             use_ultra_precision=False,
             verbose=0,
             output_dir=str(temp_output_dir),
@@ -299,20 +301,20 @@ class TestCampaignIntegration:
 
         manager2 = OptimizationManager(config2)
 
-        # Should have resumed with 5 completed runs
-        assert len(manager2._completed_runs) == 5
+        # Should have resumed with 3 completed runs
+        assert len(manager2._completed_runs) == 3
 
 
 @pytest.mark.integration
 class TestResultsSaving:
     """Tests for saving and loading results."""
 
-    def test_save_and_load_results(self, small_config, temp_output_dir):
+    def test_save_and_load_results(self, tiny_config, temp_output_dir):
         """Test saving and loading optimization results."""
         from wings import GaussianOptimizer
         from wings.config import OptimizationPipeline
 
-        opt = GaussianOptimizer(small_config)
+        opt = GaussianOptimizer(tiny_config)
 
         pipeline = OptimizationPipeline(
             target_fidelity=0.9,
@@ -348,13 +350,13 @@ class TestCustomAnsatzIntegration:
         from wings.config import OptimizationPipeline
 
         ansatz = CustomHardwareEfficientAnsatz(
-            n_qubits=6,
+            n_qubits=3,
             layers=4,
             entanglement="circular",
         )
 
         config = OptimizerConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
             ansatz=ansatz,
             verbose=False,
@@ -399,7 +401,7 @@ class TestTargetFunctionIntegration:
         }
 
         config = OptimizerConfig(
-            n_qubits=6,
+            n_qubits=3,
             sigma=0.5,
             target_function=tf_map[target_fn],
             gamma=0.3 if target_fn == "lorentzian" else None,

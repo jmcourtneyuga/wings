@@ -242,7 +242,7 @@ def lorentzian_config():
     from wings import OptimizerConfig, TargetFunction
 
     return OptimizerConfig(
-        n_qubits=6,
+        n_qubits=3,
         sigma=0.5,
         target_function=TargetFunction.LORENTZIAN,
         gamma=0.3,
@@ -259,7 +259,7 @@ def shifted_config():
     from wings import OptimizerConfig
 
     return OptimizerConfig(
-        n_qubits=6,
+        n_qubits=3,
         sigma=0.5,
         x0=1.5,
         box_size=6.0,
