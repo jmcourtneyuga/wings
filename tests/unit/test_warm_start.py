@@ -59,10 +59,10 @@ class TestWarmStart:
 
     def test_warm_start_improves_initial_fidelity(self):
         """6q Adam(100 steps) -> transfer to 8q -> fidelity > 0."""
-        from wings.ansatz import DefaultAnsatz
-        from wings.evaluators.cpu import ThreadSafeCircuitEvaluator
-        from wings.config import OptimizerConfig
         from wings.adam import AdamOptimizer
+        from wings.ansatz import DefaultAnsatz
+        from wings.config import OptimizerConfig
+        from wings.evaluators.cpu import ThreadSafeCircuitEvaluator
         from wings.warm_start import transfer_params
 
         # Build 6-qubit optimized params
@@ -72,7 +72,7 @@ class TestWarmStart:
 
         # Create a simple Gaussian target
         x = np.linspace(-np.pi, np.pi, 2**n_source)
-        target = np.exp(-x**2 / 2)
+        target = np.exp(-(x**2) / 2)
         target = target / np.linalg.norm(target)
 
         evaluator_6 = ThreadSafeCircuitEvaluator(config_6, target)
@@ -88,7 +88,10 @@ class TestWarmStart:
                 p_minus = params.copy()
                 p_plus[i] += np.pi / 2
                 p_minus[i] -= np.pi / 2
-                grad[i] = -(evaluator_6.compute_fidelity(p_plus) - evaluator_6.compute_fidelity(p_minus)) / 2
+                grad[i] = (
+                    -(evaluator_6.compute_fidelity(p_plus) - evaluator_6.compute_fidelity(p_minus))
+                    / 2
+                )
             params = adam.step(params, grad)
 
         # Transfer to 8 qubits
@@ -98,7 +101,7 @@ class TestWarmStart:
         # Build 8q target and evaluator
         config_8 = OptimizerConfig(n_qubits=n_target, sigma=1.0)
         x8 = np.linspace(-np.pi, np.pi, 2**n_target)
-        target8 = np.exp(-x8**2 / 2)
+        target8 = np.exp(-(x8**2) / 2)
         target8 = target8 / np.linalg.norm(target8)
 
         evaluator_8 = ThreadSafeCircuitEvaluator(config_8, target8)

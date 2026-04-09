@@ -80,7 +80,7 @@ class TestDirectInfidelity:
 
         # Naive 1-F loses precision here
         fidelity = small_optimizer._compute_fidelity_fast(psi)
-        naive_infidelity = 1.0 - fidelity
+        1.0 - fidelity
         # naive_infidelity may have large relative error at this scale
         # (this documents the problem, not a pass/fail criterion)
 
@@ -669,9 +669,9 @@ class TestLogFidelityObjective:
         from wings.config import OptimizationPipeline
 
         pipeline = OptimizationPipeline()
-        assert hasattr(pipeline, 'use_log_objective')
-        assert hasattr(pipeline, 'log_objective_threshold')
-        assert pipeline.use_log_objective == True
+        assert hasattr(pipeline, "use_log_objective")
+        assert hasattr(pipeline, "log_objective_threshold")
+        assert pipeline.use_log_objective
         assert pipeline.log_objective_threshold == 0.999
 
     def test_pipeline_backward_compat(self):
@@ -679,7 +679,7 @@ class TestLogFidelityObjective:
         from wings.config import OptimizationPipeline
 
         pipeline = OptimizationPipeline(use_log_objective=False)
-        assert pipeline.use_log_objective == False
+        assert not pipeline.use_log_objective
 
 
 class TestVectorizedShifts:
@@ -758,8 +758,12 @@ class TestStochasticGradient:
         """Same RNG seed should give identical results."""
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
-        grad1 = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.5, rng=rng1)
-        grad2 = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=0.5, rng=rng2)
+        grad1 = small_optimizer.compute_gradient_stochastic(
+            random_params_6q, fraction=0.5, rng=rng1
+        )
+        grad2 = small_optimizer.compute_gradient_stochastic(
+            random_params_6q, fraction=0.5, rng=rng2
+        )
         np.testing.assert_array_equal(grad1, grad2)
 
     def test_stochastic_gradient_unbiased(self, small_optimizer, random_params_6q):
@@ -786,15 +790,16 @@ class TestStochasticGradient:
     def test_fraction_one_equals_full(self, small_optimizer, random_params_6q):
         """fraction=1.0 should fall through to full gradient."""
         full_grad = small_optimizer.compute_gradient(random_params_6q)
-        stoch_grad = small_optimizer.compute_gradient_stochastic(
-            random_params_6q, fraction=1.0
-        )
+        stoch_grad = small_optimizer.compute_gradient_stochastic(random_params_6q, fraction=1.0)
         np.testing.assert_allclose(stoch_grad, full_grad, atol=1e-10)
 
     def test_config_gradient_sample_fraction_default(self):
         """Default gradient_sample_fraction should be 1.0."""
         from wings.config import OptimizerConfig
-        config = OptimizerConfig(n_qubits=6, sigma=1.0, verbose=False, use_gpu=False, use_custatevec=False)
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, verbose=False, use_gpu=False, use_custatevec=False
+        )
         assert config.gradient_sample_fraction == 1.0
 
     def test_stochastic_gradient_finite(self, small_optimizer, random_params_6q):
@@ -821,8 +826,12 @@ class TestComplexWavepackets:
         from wings.config import OptimizerConfig
 
         config = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=2.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=2.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         with pytest.warns(UserWarning, match="DefaultAnsatz"):
             opt = GaussianOptimizer(config)
@@ -834,8 +843,12 @@ class TestComplexWavepackets:
         from wings.config import OptimizerConfig
 
         config = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=3.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=3.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         with pytest.warns(UserWarning, match="DefaultAnsatz"):
             opt = GaussianOptimizer(config)
@@ -848,19 +861,29 @@ class TestComplexWavepackets:
         from wings.config import OptimizerConfig
 
         config_no_k = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=0.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=0.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         config_with_k = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=3.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=3.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         opt_no_k = GaussianOptimizer(config_no_k)
         with pytest.warns(UserWarning, match="DefaultAnsatz"):
             opt_with_k = GaussianOptimizer(config_with_k)
         # |psi| should be the same (Gaussian envelope unchanged by momentum)
         np.testing.assert_allclose(
-            np.abs(opt_with_k.target), np.abs(opt_no_k.target), atol=1e-10,
+            np.abs(opt_with_k.target),
+            np.abs(opt_no_k.target),
+            atol=1e-10,
         )
 
     def test_fidelity_computation_complex(self):
@@ -869,8 +892,12 @@ class TestComplexWavepackets:
         from wings.config import OptimizerConfig
 
         config = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=1.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=1.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         with pytest.warns(UserWarning, match="DefaultAnsatz"):
             opt = GaussianOptimizer(config)
@@ -884,8 +911,12 @@ class TestComplexWavepackets:
         from wings.config import OptimizerConfig
 
         config = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=1.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=1.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         with pytest.warns(UserWarning, match="DefaultAnsatz"):
             opt = GaussianOptimizer(config)
@@ -900,8 +931,12 @@ class TestComplexWavepackets:
         from wings.config import OptimizerConfig
 
         config = OptimizerConfig(
-            n_qubits=6, sigma=1.0, momentum=2.0, verbose=False,
-            use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=1.0,
+            momentum=2.0,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         with pytest.warns(UserWarning, match="DefaultAnsatz"):
             GaussianOptimizer(config)
@@ -929,6 +964,7 @@ class TestAdaptiveDepth:
 
     def test_adaptive_depth_config(self):
         from wings.config import OptimizationPipeline
+
         pipeline = OptimizationPipeline()
         assert hasattr(pipeline, "use_adaptive_depth")
         assert hasattr(pipeline, "min_depth")
@@ -936,14 +972,18 @@ class TestAdaptiveDepth:
 
     def test_adaptive_depth_disabled_by_default(self):
         from wings.config import OptimizationPipeline
+
         pipeline = OptimizationPipeline()
         assert pipeline.use_adaptive_depth is False
 
     def test_grow_circuit_adds_layer(self):
         from wings import GaussianOptimizer, OptimizerConfig
         from wings.ansatz import DefaultAnsatz
+
         ansatz = DefaultAnsatz(n_qubits=6, depth=2)
-        config = OptimizerConfig(n_qubits=6, sigma=0.5, ansatz=ansatz, verbose=False, use_gpu=False, use_custatevec=False)
+        config = OptimizerConfig(
+            n_qubits=6, sigma=0.5, ansatz=ansatz, verbose=False, use_gpu=False, use_custatevec=False
+        )
         opt = GaussianOptimizer(config)
         old_n_params = opt.n_params
         new_params = opt.grow_circuit(opt.get_initial_params("smart"))
@@ -953,8 +993,11 @@ class TestAdaptiveDepth:
     def test_grow_preserves_fidelity(self):
         from wings import GaussianOptimizer, OptimizerConfig
         from wings.ansatz import DefaultAnsatz
+
         ansatz = DefaultAnsatz(n_qubits=6, depth=2)
-        config = OptimizerConfig(n_qubits=6, sigma=0.5, ansatz=ansatz, verbose=False, use_gpu=False, use_custatevec=False)
+        config = OptimizerConfig(
+            n_qubits=6, sigma=0.5, ansatz=ansatz, verbose=False, use_gpu=False, use_custatevec=False
+        )
         opt = GaussianOptimizer(config)
         params = opt.get_initial_params("smart")
         fid_before = opt.compute_fidelity(params=params)
@@ -971,10 +1014,16 @@ class TestV030Integration:
         """EfficientSU2 + momentum wavepacket should work together."""
         from wings import GaussianOptimizer, OptimizerConfig
         from wings.ansatz_library import EfficientSU2Ansatz
+
         ansatz = EfficientSU2Ansatz(n_qubits=6, layers=3, entanglement="circular")
         config = OptimizerConfig(
-            n_qubits=6, sigma=0.5, momentum=1.0, ansatz=ansatz,
-            verbose=False, use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=0.5,
+            momentum=1.0,
+            ansatz=ansatz,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         opt = GaussianOptimizer(config)
         params = np.random.randn(ansatz.n_params) * 0.1
@@ -985,10 +1034,15 @@ class TestV030Integration:
         """Log-distance entanglement should work in full optimization."""
         from wings import GaussianOptimizer, OptimizerConfig
         from wings.ansatz import DefaultAnsatz
+
         ansatz = DefaultAnsatz(n_qubits=6, entanglement="log_distance")
         config = OptimizerConfig(
-            n_qubits=6, sigma=0.5, ansatz=ansatz,
-            verbose=False, use_gpu=False, use_custatevec=False,
+            n_qubits=6,
+            sigma=0.5,
+            ansatz=ansatz,
+            verbose=False,
+            use_gpu=False,
+            use_custatevec=False,
         )
         opt = GaussianOptimizer(config)
         result = opt.optimize_adam(opt.get_initial_params("smart"), max_steps=50, lr=0.02)
@@ -998,11 +1052,16 @@ class TestV030Integration:
         """Warm-started params should lead to successful optimization."""
         from wings import GaussianOptimizer, OptimizerConfig
         from wings.warm_start import transfer_params
-        config_6 = OptimizerConfig(n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False)
+
+        config_6 = OptimizerConfig(
+            n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
+        )
         opt_6 = GaussianOptimizer(config_6)
         r6 = opt_6.optimize_adam(opt_6.get_initial_params("smart"), max_steps=50, lr=0.02)
         params_8 = transfer_params(r6["params"], 6, 8)
-        config_8 = OptimizerConfig(n_qubits=8, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False)
+        config_8 = OptimizerConfig(
+            n_qubits=8, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
+        )
         opt_8 = GaussianOptimizer(config_8)
         r8 = opt_8.optimize_adam(params_8, max_steps=50, lr=0.02)
         assert r8["fidelity"] > 0
@@ -1010,7 +1069,10 @@ class TestV030Integration:
     def test_barren_plateau_detector_in_adam(self):
         """Adam optimization should include barren plateau monitoring."""
         from wings import GaussianOptimizer, OptimizerConfig
-        config = OptimizerConfig(n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False)
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=0.5, verbose=False, use_gpu=False, use_custatevec=False
+        )
         opt = GaussianOptimizer(config)
         result = opt.optimize_adam(opt.get_initial_params("smart"), max_steps=30, lr=0.02)
         assert result["fidelity"] > 0
@@ -1033,15 +1095,20 @@ class TestHessianRefinement:
         hess = small_optimizer.compute_hessian_diagonal(random_params_6q)
         eps = 1e-4
         for i in range(3):  # Check first 3 params
-            p_plus = random_params_6q.copy(); p_plus[i] += eps
-            p_minus = random_params_6q.copy(); p_minus[i] -= eps
+            p_plus = random_params_6q.copy()
+            p_plus[i] += eps
+            p_minus = random_params_6q.copy()
+            p_minus[i] -= eps
             f_plus = small_optimizer.compute_fidelity(params=p_plus)
             f_minus = small_optimizer.compute_fidelity(params=p_minus)
             f_0 = small_optimizer.compute_fidelity(params=random_params_6q)
-            fd_hess = (f_plus - 2*f_0 + f_minus) / eps**2
+            fd_hess = (f_plus - 2 * f_0 + f_minus) / eps**2
             # Note: hess is for -fidelity (minimization), fd_hess is for fidelity
             # So hess[i] ~ -fd_hess (negated)
-            assert abs(hess[i] - (-fd_hess)) / (abs(fd_hess) + 1e-10) < 0.5 or abs(hess[i] - (-fd_hess)) < 0.5
+            assert (
+                abs(hess[i] - (-fd_hess)) / (abs(fd_hess) + 1e-10) < 0.5
+                or abs(hess[i] - (-fd_hess)) < 0.5
+            )
 
     def test_newton_step_shape(self, small_optimizer, random_params_6q):
         new_params = small_optimizer.newton_refinement_step(random_params_6q)

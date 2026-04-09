@@ -1,6 +1,7 @@
 """Fidelity and infidelity computation utilities."""
 
 import numpy as np
+
 from .types import ComplexArray
 
 __all__ = ["compute_fidelity_fast", "compute_infidelity_direct"]

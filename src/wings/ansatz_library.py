@@ -5,7 +5,7 @@ Provides reusable ansatz circuits with various entanglement patterns
 for variational quantum state preparation.
 """
 
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 __all__ = ["EfficientSU2Ansatz", "generate_entanglement_map"]
 
 
-def generate_entanglement_map(
-    n_qubits: int, pattern: str
-) -> List[Tuple[int, int]]:
+def generate_entanglement_map(n_qubits: int, pattern: str) -> list[tuple[int, int]]:
     """
     Generate an entanglement map (list of qubit pairs) for a given pattern.
 

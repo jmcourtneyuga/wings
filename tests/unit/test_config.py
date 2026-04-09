@@ -170,12 +170,14 @@ class TestOptimalBoxSize:
     def test_optimal_box_known_range(self):
         """For sigma=1.0, n=8, optimal L should be in reasonable range."""
         from wings.config import optimal_box_size
+
         L = optimal_box_size(sigma=1.0, n_qubits=8)
         assert 3.0 < L < 8.0
 
     def test_optimal_box_scales_with_sigma(self):
         """Optimal L should scale roughly linearly with sigma."""
         from wings.config import optimal_box_size
+
         L1 = optimal_box_size(sigma=0.5, n_qubits=8)
         L2 = optimal_box_size(sigma=1.0, n_qubits=8)
         L3 = optimal_box_size(sigma=2.0, n_qubits=8)
@@ -187,6 +189,7 @@ class TestOptimalBoxSize:
     def test_optimal_box_scales_with_qubits(self):
         """More qubits should allow slightly larger optimal L."""
         from wings.config import optimal_box_size
+
         L6 = optimal_box_size(sigma=1.0, n_qubits=6)
         L8 = optimal_box_size(sigma=1.0, n_qubits=8)
         L10 = optimal_box_size(sigma=1.0, n_qubits=10)
@@ -195,6 +198,7 @@ class TestOptimalBoxSize:
     def test_optimal_box_narrow_gaussian(self):
         """Narrow Gaussian (sigma=0.1) should give much smaller L than heuristic."""
         from wings.config import optimal_box_size
+
         L_opt = optimal_box_size(sigma=0.1, n_qubits=8)
         L_heuristic = max(4.0, 12 * 0.1)  # = 4.0
         # For very narrow Gaussian on 256-point grid, optimal should be < 4
@@ -203,6 +207,7 @@ class TestOptimalBoxSize:
     def test_optimal_box_lorentzian(self):
         """Lorentzian should give larger L than Gaussian (heavier tails)."""
         from wings.config import optimal_box_size
+
         L_gauss = optimal_box_size(sigma=1.0, n_qubits=8, target_function="gaussian")
         L_lor = optimal_box_size(sigma=1.0, n_qubits=8, target_function="lorentzian")
         assert L_lor > L_gauss
@@ -210,12 +215,14 @@ class TestOptimalBoxSize:
     def test_optimal_box_sech(self):
         """Sech box size should be computed without error."""
         from wings.config import optimal_box_size
+
         L = optimal_box_size(sigma=1.0, n_qubits=8, target_function="sech")
         assert L > 0
 
     def test_optimal_box_safety_factor(self):
         """Safety factor should scale the result."""
         from wings.config import optimal_box_size
+
         L1 = optimal_box_size(sigma=1.0, n_qubits=8, safety_factor=1.0)
         L2 = optimal_box_size(sigma=1.0, n_qubits=8, safety_factor=1.5)
         assert abs(L2 / L1 - 1.5) < 0.01
@@ -223,6 +230,7 @@ class TestOptimalBoxSize:
     def test_auto_optimize_box_false_preserves_heuristic(self):
         """Default auto_optimize_box=False should use existing heuristic."""
         from wings.config import OptimizerConfig
+
         config = OptimizerConfig(n_qubits=6, sigma=1.0, verbose=False)
         # With auto_optimize_box=False (default), box_size uses heuristic
         assert config.box_size is not None
@@ -231,6 +239,7 @@ class TestOptimalBoxSize:
     def test_auto_optimize_box_true_uses_optimal(self):
         """auto_optimize_box=True should use optimal_box_size."""
         from wings.config import OptimizerConfig, optimal_box_size
+
         config = OptimizerConfig(n_qubits=8, sigma=1.0, auto_optimize_box=True, verbose=False)
         expected = optimal_box_size(sigma=1.0, n_qubits=8)
         assert abs(config.box_size - expected) < 0.01
@@ -238,7 +247,10 @@ class TestOptimalBoxSize:
     def test_explicit_box_size_overrides_auto(self):
         """Explicit box_size should override auto_optimize_box."""
         from wings.config import OptimizerConfig
-        config = OptimizerConfig(n_qubits=6, sigma=1.0, auto_optimize_box=True, box_size=5.0, verbose=False)
+
+        config = OptimizerConfig(
+            n_qubits=6, sigma=1.0, auto_optimize_box=True, box_size=5.0, verbose=False
+        )
         assert config.box_size == 5.0
 
 

@@ -3,7 +3,6 @@
 import json
 import os
 from datetime import datetime
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -58,23 +57,17 @@ def plot_optimization_results(
         # Plot 1: Probability densities (log scale option for high precision)
         ax = axes[0, 0]
         ax.plot(x, np.abs(psi_circuit) ** 2, "b-", label="Circuit", linewidth=2)
-        ax.plot(
-            x, np.abs(psi_target) ** 2, "r--", label="Target Gaussian", linewidth=2, alpha=0.8
-        )
+        ax.plot(x, np.abs(psi_target) ** 2, "r--", label="Target Gaussian", linewidth=2, alpha=0.8)
         ax.set_xlabel("Position x", fontsize=11)
         ax.set_ylabel("|ψ(x)|²", fontsize=11)
-        ax.set_title(
-            f"Probability Density (Fidelity = {results['fidelity']:.10f})", fontsize=12
-        )
+        ax.set_title(f"Probability Density (Fidelity = {results['fidelity']:.10f})", fontsize=12)
         ax.legend(fontsize=10)
         ax.grid(True, alpha=0.3)
 
         # Plot 2: Real and imaginary parts
         ax = axes[0, 1]
         ax.plot(x, np.real(psi_circuit), "b-", label="Circuit (Real)", linewidth=1.5)
-        ax.plot(
-            x, np.imag(psi_circuit), "b--", label="Circuit (Imag)", linewidth=1.5, alpha=0.7
-        )
+        ax.plot(x, np.imag(psi_circuit), "b--", label="Circuit (Imag)", linewidth=1.5, alpha=0.7)
         ax.plot(x, np.real(psi_target), "r-", label="Target (Real)", linewidth=1.5, alpha=0.8)
         ax.plot(x, np.imag(psi_target), "r--", label="Target (Imag)", linewidth=1.5, alpha=0.5)
         ax.set_xlabel("Position x", fontsize=11)
@@ -101,9 +94,7 @@ def plot_optimization_results(
             infidelities = 1 - fidelities
 
             # Plot on log scale to see high precision improvement
-            ax.semilogy(
-                history["iteration"], infidelities, "g-", linewidth=1.5, label="Infidelity"
-            )
+            ax.semilogy(history["iteration"], infidelities, "g-", linewidth=1.5, label="Infidelity")
             ax.axhline(y=1e-3, color="r", linestyle="--", alpha=0.5, label="F=0.999")
             ax.axhline(y=1e-4, color="orange", linestyle="--", alpha=0.5, label="F=0.9999")
             ax.axhline(

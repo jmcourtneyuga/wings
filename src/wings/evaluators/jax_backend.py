@@ -8,7 +8,6 @@ Requires: jax, jaxlib (optional dependencies)
 """
 
 import numpy as np
-from typing import Optional
 
 __all__ = [
     "HAS_JAX",
@@ -25,6 +24,7 @@ try:
     import jax
     import jax.numpy as jnp
     from jax import grad as jax_grad
+
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False

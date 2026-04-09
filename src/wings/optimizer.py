@@ -1,9 +1,14 @@
 """Main Gaussian state optimizer."""
 
+from __future__ import annotations
+
 import copy
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import pipeline as pipeline_mod
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,10 +18,16 @@ from qiskit.quantum_info import Statevector
 from scipy.optimize import basinhopping, differential_evolution, minimize
 
 from .adam import AdamOptimizer, AdamWithRestarts
-from .barren_plateau import BarrenPlateauDetector
 from .ansatz import DefaultAnsatz
+from .barren_plateau import BarrenPlateauDetector
 from .compat import HAS_CUSTATEVEC
-from .config import OptimizationPipeline, OptimizerConfig, TargetFunction, _TRACY_WIDOM_TARGETS, _TW_BETA_MAP
+from .config import (
+    _TRACY_WIDOM_TARGETS,
+    _TW_BETA_MAP,
+    OptimizationPipeline,
+    OptimizerConfig,
+    TargetFunction,
+)
 from .evaluators.cpu import ThreadSafeCircuitEvaluator
 from .evaluators.custatevec import (
     BatchedCuStateVecEvaluator,
@@ -133,11 +144,13 @@ class GaussianOptimizer:
         elif self.config.use_custatevec and not HAS_CUSTATEVEC:
             print("\nNote: cuStateVec requested but not available. Using Aer GPU fallback.")
 
-    def _compute_target_wavefunction(self) -> "ComplexArray":
+    def _compute_target_wavefunction(self) -> ComplexArray:
         """Compute normalized target wavefunction based on config."""
         # Warn if complex target is used with RY-only ansatz
         if self.config.momentum != 0.0:
-            ansatz_name = type(self.config.ansatz).__name__ if self.config.ansatz else "DefaultAnsatz"
+            ansatz_name = (
+                type(self.config.ansatz).__name__ if self.config.ansatz else "DefaultAnsatz"
+            )
             if ansatz_name == "DefaultAnsatz":
                 import warnings
 
@@ -166,6 +179,7 @@ class GaussianOptimizer:
             psi = np.exp(-((x - x0) ** 2) / (2 * sigma**2)) * np.exp(1j * k * x)
         elif self.config.target_function in _TRACY_WIDOM_TARGETS:
             from .tracy_widom import tracy_widom_wavefunction
+
             beta = _TW_BETA_MAP[self.config.target_function]
             psi = tracy_widom_wavefunction(x, beta=beta)
         elif self.config.target_function == TargetFunction.CUSTOM:
@@ -176,7 +190,10 @@ class GaussianOptimizer:
             raise ValueError(f"Unknown target function: {self.config.target_function}")
 
         # Apply momentum phase if specified (for non-wavepacket targets)
-        if self.config.momentum != 0.0 and self.config.target_function != TargetFunction.GAUSSIAN_WAVEPACKET:
+        if (
+            self.config.momentum != 0.0
+            and self.config.target_function != TargetFunction.GAUSSIAN_WAVEPACKET
+        ):
             k = self.config.momentum
             psi = psi * np.exp(1j * k * x)
 
@@ -215,10 +232,11 @@ class GaussianOptimizer:
             Statevector as numpy array
         """
         if backend is None:
-            backend = self.config.backend if hasattr(self.config, 'backend') else "auto"
+            backend = self.config.backend if hasattr(self.config, "backend") else "auto"
 
         if backend == "jax":
             from .evaluators.jax_backend import HAS_JAX
+
             if not HAS_JAX:
                 raise ImportError("JAX not installed. Use backend='qiskit' or install jax.")
             # JAX statevector path would go here
@@ -250,8 +268,8 @@ class GaussianOptimizer:
 
     def compute_fidelity(
         self,
-        params: Optional[ParameterArray] = None,
-        psi: Optional[ComplexArray] = None,
+        params: ParameterArray | None = None,
+        psi: ComplexArray | None = None,
         backend: str = "auto",
     ) -> float:
         """
@@ -293,8 +311,8 @@ class GaussianOptimizer:
             return self._compute_fidelity_fast(psi)
 
     def evaluate_population(
-        self, population: "NDArray[np.float64]", backend: str = "auto"
-    ) -> "FloatArray":
+        self, population: NDArray[np.float64], backend: str = "auto"
+    ) -> FloatArray:
         """
         Evaluate fidelities for population with automatic backend selection.
 
@@ -388,11 +406,13 @@ class GaussianOptimizer:
     def _compute_fidelity_fast(self, psi_circuit: ComplexArray) -> float:
         """Optimized fidelity using pre-conjugated target"""
         from .fidelity import compute_fidelity_fast
+
         return compute_fidelity_fast(self._target_conj, psi_circuit)
 
     def _compute_infidelity_direct(self, psi_circuit: ComplexArray) -> float:
         """Compute infidelity without catastrophic cancellation."""
         from .fidelity import compute_infidelity_direct
+
         return compute_infidelity_direct(self._target_conj, self.target, psi_circuit)
 
     def compute_gradient(self, params: np.ndarray, method: str = "auto") -> np.ndarray:
@@ -736,7 +756,7 @@ class GaussianOptimizer:
         return self._pipeline_finalize(pipeline, start_time)
 
     def run_pipeline(
-        self, pipeline: "Pipeline" = None, initial_params: np.ndarray = None
+        self, pipeline: pipeline_mod.Pipeline = None, initial_params: np.ndarray = None
     ) -> dict:
         """
         Execute a composable optimization pipeline.
@@ -754,8 +774,15 @@ class GaussianOptimizer:
             Results dictionary with optimal_params, fidelity, infidelity, time, etc.
         """
         from .pipeline import (
-            Pipeline, InitSearch, Adam, SPSA, NaturalGradient,
-            LBFGSB, BasinHopping, Newton, GrowCircuit,
+            LBFGSB,
+            SPSA,
+            Adam,
+            BasinHopping,
+            GrowCircuit,
+            InitSearch,
+            NaturalGradient,
+            Newton,
+            Pipeline,
         )
 
         if pipeline is None:
@@ -860,21 +887,24 @@ class GaussianOptimizer:
 
             elif isinstance(stage, LBFGSB):
                 if current_params is None:
-                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                    current_params = (
+                        self.best_params
+                        if self.best_params is not None
+                        else self.get_initial_params("smart")
+                    )
                 for tol in stage.tolerances:
                     if self.best_fidelity >= pipeline.target_fidelity:
                         break
                     if time.time() - start_time > pipeline.max_total_time * 0.95:
                         break
-                    if (
-                        stage.use_log_objective
-                        and self.best_fidelity > stage.log_threshold
-                    ):
+                    if stage.use_log_objective and self.best_fidelity > stage.log_threshold:
                         if pipeline.verbose:
                             print(f"  L-BFGS-B (tol={tol:.0e}, log objective)...")
                         lbfgs_opts = {
-                            "maxiter": stage.max_iter, "ftol": tol,
-                            "gtol": tol, "disp": False,
+                            "maxiter": stage.max_iter,
+                            "ftol": tol,
+                            "gtol": tol,
+                            "disp": False,
                         }
                         if self.config.high_precision:
                             lbfgs_opts["maxcor"] = 30
@@ -897,8 +927,10 @@ class GaussianOptimizer:
                             print(f"  L-BFGS-B (tol={tol:.0e})...")
                         self.config.gtol = tol
                         self.optimize_stage(
-                            self.best_params, f"L-BFGS-B (tol={tol:.0e})",
-                            max_iter=stage.max_iter, tolerance=tol,
+                            self.best_params,
+                            f"L-BFGS-B (tol={tol:.0e})",
+                            max_iter=stage.max_iter,
+                            tolerance=tol,
                         )
                     if pipeline.verbose:
                         print(f"    F = {self.best_fidelity:.15f}")
@@ -906,7 +938,11 @@ class GaussianOptimizer:
 
             elif isinstance(stage, BasinHopping):
                 if current_params is None:
-                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                    current_params = (
+                        self.best_params
+                        if self.best_params is not None
+                        else self.get_initial_params("smart")
+                    )
                 self.optimize_basin_hopping(
                     current_params,
                     n_iterations=stage.n_iterations,
@@ -917,10 +953,16 @@ class GaussianOptimizer:
 
             elif isinstance(stage, Newton):
                 if current_params is None:
-                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                    current_params = (
+                        self.best_params
+                        if self.best_params is not None
+                        else self.get_initial_params("smart")
+                    )
                 for step in range(stage.max_steps):
                     current_params = self.newton_refinement_step(
-                        current_params, lr=stage.lr, epsilon=stage.epsilon,
+                        current_params,
+                        lr=stage.lr,
+                        epsilon=stage.epsilon,
                     )
                     fid = self.compute_fidelity(params=current_params)
                     if fid > self.best_fidelity:
@@ -932,13 +974,19 @@ class GaussianOptimizer:
 
             elif isinstance(stage, GrowCircuit):
                 if current_params is None:
-                    current_params = self.best_params if self.best_params is not None else self.get_initial_params("smart")
+                    current_params = (
+                        self.best_params
+                        if self.best_params is not None
+                        else self.get_initial_params("smart")
+                    )
                 current_params = self.grow_circuit(current_params)
                 if pipeline.verbose:
                     print(f"  Circuit grown to depth {self.ansatz.depth}, n_params={self.n_params}")
 
             if pipeline.verbose and self.best_fidelity > 0:
-                print(f"  -> Best F = {self.best_fidelity:.12f} (1-F = {1 - self.best_fidelity:.3e})")
+                print(
+                    f"  -> Best F = {self.best_fidelity:.12f} (1-F = {1 - self.best_fidelity:.3e})"
+                )
 
         # Finalize
         total_time = time.time() - start_time
@@ -1099,10 +1147,7 @@ class GaussianOptimizer:
             self.config.gtol = tol
 
             # Use log-infidelity objective when enabled and fidelity is high enough
-            if (
-                pipeline.use_log_objective
-                and self.best_fidelity > pipeline.log_objective_threshold
-            ):
+            if pipeline.use_log_objective and self.best_fidelity > pipeline.log_objective_threshold:
                 if pipeline.verbose:
                     print("    Using log-infidelity objective")
                 lbfgs_options = {
@@ -1333,8 +1378,11 @@ class GaussianOptimizer:
     def grow_circuit(self, current_params: np.ndarray) -> np.ndarray:
         """Grow the circuit by one layer, preserving existing parameters."""
         from .ansatz import DefaultAnsatz
+
         if not isinstance(self.ansatz, DefaultAnsatz):
-            raise TypeError(f"Adaptive depth only supports DefaultAnsatz. Got {type(self.ansatz).__name__}")
+            raise TypeError(
+                f"Adaptive depth only supports DefaultAnsatz. Got {type(self.ansatz).__name__}"
+            )
 
         old_depth = self.ansatz.depth
         new_depth = old_depth + 1
@@ -1346,7 +1394,9 @@ class GaussianOptimizer:
 
         self.param_vector = ParameterVector("theta", self.n_params)
         self.circuit = self.ansatz(self.param_vector, n, **(self.config.ansatz_kwargs or {}))
-        self._circuit_transpiled = transpile(self.circuit, basis_gates=["ry", "rz", "cx", "x"], optimization_level=1)
+        self._circuit_transpiled = transpile(
+            self.circuit, basis_gates=["ry", "rz", "cx", "x"], optimization_level=1
+        )
         self._param_list = list(self.param_vector)
 
         new_layer_params = np.random.randn(n) * 0.01
@@ -1425,6 +1475,7 @@ class GaussianOptimizer:
 
         elif strategy == "mps":
             from .mps_init import mps_initial_params
+
             params = mps_initial_params(self.target, self.config.n_qubits)
             # Ensure correct length
             if len(params) != self.n_params:
@@ -1839,7 +1890,9 @@ class GaussianOptimizer:
         from .natural_gradient import compute_natural_gradient
 
         start_time = time.time()
-        print(f"\nNatural Gradient Optimization (lr={lr}, reg={regularization}, max_steps={max_steps})")
+        print(
+            f"\nNatural Gradient Optimization (lr={lr}, reg={regularization}, max_steps={max_steps})"
+        )
         print("-" * 50)
 
         params = initial_params.copy()
@@ -1883,7 +1936,9 @@ class GaussianOptimizer:
             self.best_fidelity = best_fidelity
             self.best_params = best_params
 
-        print(f"\nNatural gradient complete: F={best_fidelity:.12f} in {elapsed:.1f}s ({step + 1} steps)")
+        print(
+            f"\nNatural gradient complete: F={best_fidelity:.12f} in {elapsed:.1f}s ({step + 1} steps)"
+        )
 
         return {
             "params": best_params,
@@ -1893,7 +1948,7 @@ class GaussianOptimizer:
             "time": elapsed,
         }
 
-    def optimize(self, initial_params: Optional[np.ndarray] = None) -> dict:
+    def optimize(self, initial_params: np.ndarray | None = None) -> dict:
         """
         Multi-stage adaptive optimization.
 
@@ -2383,7 +2438,7 @@ class GaussianOptimizer:
             "cma_result": es.result,
         }
 
-    def plot_results(self, results: dict, save_path: Optional[str] = None):
+    def plot_results(self, results: dict, save_path: str | None = None):
         """Create visualization plots with high precision display."""
         from .visualization import plot_optimization_results
 
@@ -2423,7 +2478,7 @@ class GaussianOptimizer:
 
     def get_optimized_circuit(
         self,
-        params: Optional[np.ndarray] = None,
+        params: np.ndarray | None = None,
         include_measurements: bool = False,
     ) -> QuantumCircuit:
         from .export import build_optimized_circuit
@@ -2432,7 +2487,7 @@ class GaussianOptimizer:
 
     def export_qasm(
         self,
-        params: Optional[np.ndarray] = None,
+        params: np.ndarray | None = None,
         include_measurements: bool = False,
         version: int = 2,
     ) -> str:
@@ -2448,7 +2503,7 @@ class GaussianOptimizer:
     def save_circuit(
         self,
         filepath: str,
-        params: Optional[np.ndarray] = None,
+        params: np.ndarray | None = None,
         format: str = "qasm",
         include_measurements: bool = False,
         **kwargs,

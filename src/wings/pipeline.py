@@ -246,9 +246,7 @@ class Pipeline:
         )
 
     @classmethod
-    def standard(
-        cls, target_fidelity: float = 0.999999, max_time: float = 600
-    ) -> "Pipeline":
+    def standard(cls, target_fidelity: float = 0.999999, max_time: float = 600) -> "Pipeline":
         """
         Standard pipeline for most problems.
 
@@ -266,7 +264,9 @@ class Pipeline:
 
     @classmethod
     def ultra(
-        cls, target_fidelity: float = None, target_infidelity: float = 1e-11,
+        cls,
+        target_fidelity: float = None,
+        target_infidelity: float = 1e-11,
         max_time: float = 3600,
     ) -> "Pipeline":
         """
@@ -290,9 +290,7 @@ class Pipeline:
         )
 
     @classmethod
-    def for_momentum(
-        cls, target_fidelity: float = 0.9999, max_time: float = 1200
-    ) -> "Pipeline":
+    def for_momentum(cls, target_fidelity: float = 0.9999, max_time: float = 1200) -> "Pipeline":
         """
         Pipeline for complex targets (momentum wavepackets, phase-encoded states).
 
@@ -327,7 +325,7 @@ class Pipeline:
 
         InitSearch -> [Adam -> GrowCircuit] x n_grows -> L-BFGS-B -> Newton
         """
-        stages = [InitSearch(strategies=["smart", "random"])]
+        stages: list[Stage] = [InitSearch(strategies=["smart", "random"])]
         for i in range(n_grows):
             stages.append(Adam(max_steps=500, lr=0.02 / (i + 1)))
             stages.append(GrowCircuit())
@@ -340,9 +338,7 @@ class Pipeline:
         )
 
     @classmethod
-    def exploration(
-        cls, target_fidelity: float = 0.999, max_time: float = 300
-    ) -> "Pipeline":
+    def exploration(cls, target_fidelity: float = 0.999, max_time: float = 300) -> "Pipeline":
         """
         Cheap exploration for finding a good basin.
 

@@ -1,0 +1,26 @@
+# Normalize line endings for consistent cross-platform collaboration
+* text=auto
+
+# Force LF for source files
+*.py text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+*.sh text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.npy binary
+*.pkl binary
+*.whl binary
+*.tar.gz binary

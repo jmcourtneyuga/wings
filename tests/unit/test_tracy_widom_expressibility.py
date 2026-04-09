@@ -138,26 +138,27 @@ RZ angles to zero would recover its performance.
 
 import sys
 import time
+
 import numpy as np
 from scipy.optimize import minimize
 
 # ---------------------------------------------------------------------------
 # Resolve imports
 # ---------------------------------------------------------------------------
-sys.path.insert(0,
-    str(__import__("pathlib").Path(__file__).resolve().parents[3] / "src"))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "src"))
 
+from wings.fidelity import compute_fidelity_fast
 from wings.tracy_widom import (
-    tracy_widom_wavefunction,
     TW_BETA_1,
     TW_BETA_2,
     TW_BETA_4,
+    tracy_widom_wavefunction,
 )
-from wings.fidelity import compute_fidelity_fast
 
 # ---------------------------------------------------------------------------
 # Fast direct statevector simulation (no Qiskit Aer dependency)
 # ---------------------------------------------------------------------------
+
 
 def _ry_matrix(theta: float) -> np.ndarray:
     c, s = np.cos(theta / 2), np.sin(theta / 2)
@@ -189,12 +190,10 @@ def _apply_cnot(sv: np.ndarray, ctrl: int, tgt: int, nq: int) -> np.ndarray:
     return sv2
 
 
-def simulate_default_ansatz(
-    params: np.ndarray, nq: int, depth: int, ent_map: list
-) -> np.ndarray:
+def simulate_default_ansatz(params: np.ndarray, nq: int, depth: int, ent_map: list) -> np.ndarray:
     """Simulate DefaultAnsatz: X(n-1) then RY layers with CNOT entanglement."""
     sv = np.zeros(2**nq, dtype=complex)
-    sv[2**(nq - 1)] = 1.0  # qc.x(n-1) on |0...0⟩
+    sv[2 ** (nq - 1)] = 1.0  # qc.x(n-1) on |0...0⟩
 
     idx = 0
     # First RY layer
@@ -211,9 +210,7 @@ def simulate_default_ansatz(
     return sv
 
 
-def simulate_su2_ansatz(
-    params: np.ndarray, nq: int, layers: int, ent_map: list
-) -> np.ndarray:
+def simulate_su2_ansatz(params: np.ndarray, nq: int, layers: int, ent_map: list) -> np.ndarray:
     """Simulate EfficientSU2Ansatz: RY+RZ layers with CNOT entanglement."""
     sv = np.zeros(2**nq, dtype=complex)
     sv[0] = 1.0  # |0...0⟩
@@ -248,6 +245,7 @@ MAX_ITER = 2500
 # Part I: Analytic verification
 # ---------------------------------------------------------------------------
 
+
 def verify_lemma_1(n_qubits: int = 6) -> dict:
     """Lemma 1: TW wavefunctions are real and non-negative."""
     x = np.linspace(S_MIN, S_MAX, 2**n_qubits)
@@ -280,11 +278,12 @@ def verify_lemma_4(n_qubits: int, depth: int) -> dict:
 # Part II: Numerical optimization
 # ---------------------------------------------------------------------------
 
+
 def build_target(n_qubits: int, beta: int) -> np.ndarray:
     """Build normalized TW target on 2^N grid."""
     x = np.linspace(S_MIN, S_MAX, 2**n_qubits)
     psi = tracy_widom_wavefunction(x, beta=beta, s_min=S_MIN - 2, s_max=S_MAX + 2)
-    psi /= np.sqrt(np.sum(np.abs(psi)**2))
+    psi /= np.sqrt(np.sum(np.abs(psi) ** 2))
     return psi
 
 
@@ -302,8 +301,12 @@ def optimize_default(n_qubits: int, depth: int, beta: int) -> float:
     best = 0.0
     for _ in range(N_RESTARTS):
         p0 = np.random.uniform(-np.pi, np.pi, n_params)
-        r = minimize(neg_F, p0, method="Nelder-Mead",
-                     options={"maxiter": MAX_ITER, "xatol": 1e-8, "fatol": 1e-10})
+        r = minimize(
+            neg_F,
+            p0,
+            method="Nelder-Mead",
+            options={"maxiter": MAX_ITER, "xatol": 1e-8, "fatol": 1e-10},
+        )
         best = max(best, -r.fun)
     return best
 
@@ -322,8 +325,12 @@ def optimize_su2(n_qubits: int, depth: int, beta: int) -> float:
     best = 0.0
     for _ in range(N_RESTARTS):
         p0 = np.random.uniform(-np.pi, np.pi, n_params)
-        r = minimize(neg_F, p0, method="Nelder-Mead",
-                     options={"maxiter": MAX_ITER, "xatol": 1e-8, "fatol": 1e-10})
+        r = minimize(
+            neg_F,
+            p0,
+            method="Nelder-Mead",
+            options={"maxiter": MAX_ITER, "xatol": 1e-8, "fatol": 1e-10},
+        )
         best = max(best, -r.fun)
     return best
 
@@ -331,6 +338,7 @@ def optimize_su2(n_qubits: int, depth: int, beta: int) -> float:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def run_proof(verbose: bool = True) -> dict:
     """Execute the full analytic + numerical proof."""
@@ -349,8 +357,7 @@ def run_proof(verbose: bool = True) -> dict:
         for beta in BETAS:
             r = lem1[beta]
             ok = "✓" if r["is_real"] and r["is_nonneg"] else "✗"
-            print(f"  {BETA_NAMES[beta]}: real={r['is_real']}, "
-                  f"non-neg={r['is_nonneg']}  [{ok}]")
+            print(f"  {BETA_NAMES[beta]}: real={r['is_real']}, non-neg={r['is_nonneg']}  [{ok}]")
 
     if verbose:
         print("\nLemma 2: RY+CNOT universal over R^{2^N}  [Vatan-Williams 2004]  ✓")
@@ -366,9 +373,11 @@ def run_proof(verbose: bool = True) -> dict:
             r = verify_lemma_4(nq, d)
             lem4.append(r)
             if verbose:
-                print(f"  N={nq}, L={d}: DOF={r['real_dof']}, "
-                      f"Default={r['default_params']}({'✓' if r['default_sufficient'] else '✗'}), "
-                      f"SU2={r['su2_params']}({'✓' if r['su2_sufficient'] else '✗'})")
+                print(
+                    f"  N={nq}, L={d}: DOF={r['real_dof']}, "
+                    f"Default={r['default_params']}({'✓' if r['default_sufficient'] else '✗'}), "
+                    f"SU2={r['su2_params']}({'✓' if r['su2_sufficient'] else '✗'})"
+                )
     results["analytic"]["lemma_4"] = lem4
 
     # === Part II ===
@@ -378,8 +387,11 @@ def run_proof(verbose: bool = True) -> dict:
         print("=" * 65)
 
     configs = [
-        (4, 8), (4, 12), (4, 16),
-        (5, 8), (5, 12),
+        (4, 8),
+        (4, 12),
+        (4, 16),
+        (5, 8),
+        (5, 12),
     ]
 
     for nq, depth in configs:
@@ -390,7 +402,9 @@ def run_proof(verbose: bool = True) -> dict:
             dt = time.time() - t0
 
             entry = {
-                "n_qubits": nq, "depth": depth, "beta": beta,
+                "n_qubits": nq,
+                "depth": depth,
+                "beta": beta,
                 "default_F": F_d,
                 "su2_F": F_s,
                 "default_pass": F_d >= FIDELITY_THRESHOLD,

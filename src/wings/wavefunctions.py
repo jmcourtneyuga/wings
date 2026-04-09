@@ -8,9 +8,9 @@ be normalized during target construction.
 """
 
 import math
+from typing import Optional
 
 import numpy as np
-from typing import Optional
 
 __all__ = [
     "harmonic_oscillator_eigenstate",
@@ -51,7 +51,7 @@ def harmonic_oscillator_eigenstate(
 
     # Normalization: (2^n * n! * sqrt(pi) * sigma)^(-1/2)
     norm = (2**n * math.factorial(n) * np.sqrt(np.pi) * sigma) ** (-0.5)
-    psi = norm * H_n(xi) * np.exp(-xi**2 / 2)
+    psi = norm * H_n(xi) * np.exp(-(xi**2) / 2)
 
     return psi.astype(np.complex128)
 
@@ -88,7 +88,7 @@ def superposition_of_gaussians(
 
     psi = np.zeros_like(x, dtype=np.complex128)
     for x_i, s_i, a_i in zip(centers, sigmas, amplitudes):
-        psi += a_i * np.exp(-(x - x_i) ** 2 / (2 * s_i**2))
+        psi += a_i * np.exp(-((x - x_i) ** 2) / (2 * s_i**2))
 
     return psi
 
@@ -158,8 +158,7 @@ def morse_oscillator_eigenstate(
 
     if n > n_max:
         raise ValueError(
-            f"Quantum number n={n} exceeds maximum bound state n_max={n_max} "
-            f"for lambda={lam:.2f}"
+            f"Quantum number n={n} exceeds maximum bound state n_max={n_max} for lambda={lam:.2f}"
         )
 
     s = lam - n - 0.5
@@ -205,7 +204,7 @@ def squeezed_gaussian(
         Complex wavefunction array
     """
     sigma_eff = sigma * np.exp(-squeeze_r)
-    psi = np.exp(-(x - x0) ** 2 / (2 * sigma_eff**2))
+    psi = np.exp(-((x - x0) ** 2) / (2 * sigma_eff**2))
 
     return psi.astype(np.complex128)
 
@@ -237,7 +236,7 @@ def plane_wave_packet(
     Returns:
         Complex wavefunction array (with nonzero imaginary part when k0 != 0)
     """
-    envelope = np.exp(-(x - x0) ** 2 / (2 * sigma**2))
+    envelope = np.exp(-((x - x0) ** 2) / (2 * sigma**2))
     phase = np.exp(1j * k0 * x)
 
     return (phase * envelope).astype(np.complex128)

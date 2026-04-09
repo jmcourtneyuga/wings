@@ -9,6 +9,7 @@ Falls back to text/HTML summary when plotly is not available.
 """
 
 from typing import Optional
+
 import numpy as np
 
 __all__ = ["OptimizationDashboard"]
@@ -16,7 +17,8 @@ __all__ = ["OptimizationDashboard"]
 # Check for plotly availability without requiring it at import time
 _HAS_PLOTLY = False
 try:
-    import plotly
+    import plotly  # noqa: F401 — used only to detect availability
+
     _HAS_PLOTLY = True
 except ImportError:
     pass
@@ -50,6 +52,7 @@ class OptimizationDashboard:
     ) -> None:
         """Record one optimization step."""
         import time
+
         self.steps.append(step)
         self.fidelities.append(fidelity)
         self.infidelities.append(max(1.0 - fidelity, 1e-16))
@@ -74,16 +77,19 @@ class OptimizationDashboard:
         """Plot infidelity convergence (requires plotly)."""
         if not _HAS_PLOTLY:
             raise ImportError(
-                "plotly is required for interactive plots. "
-                "Install with: pip install plotly"
+                "plotly is required for interactive plots. Install with: pip install plotly"
             )
         import plotly.graph_objects as go
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=self.steps, y=self.infidelities,
-            mode="lines", name="Infidelity (1-F)",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=self.steps,
+                y=self.infidelities,
+                mode="lines",
+                name="Infidelity (1-F)",
+            )
+        )
         fig.update_layout(
             title="Optimization Convergence",
             xaxis_title="Step",
@@ -99,10 +105,14 @@ class OptimizationDashboard:
         import plotly.graph_objects as go
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=self.steps, y=self.gradient_norms,
-            mode="lines", name="Gradient Norm",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=self.steps,
+                y=self.gradient_norms,
+                mode="lines",
+                name="Gradient Norm",
+            )
+        )
         fig.update_layout(
             title="Gradient Norm History",
             xaxis_title="Step",
@@ -121,18 +131,31 @@ class OptimizationDashboard:
             import plotly.graph_objects as go
             from plotly.subplots import make_subplots
 
-            fig = make_subplots(rows=2, cols=1,
-                subplot_titles=("Infidelity Convergence", "Gradient Norm"))
+            fig = make_subplots(
+                rows=2, cols=1, subplot_titles=("Infidelity Convergence", "Gradient Norm")
+            )
 
-            fig.add_trace(go.Scatter(
-                x=self.steps, y=self.infidelities,
-                mode="lines", name="Infidelity",
-            ), row=1, col=1)
+            fig.add_trace(
+                go.Scatter(
+                    x=self.steps,
+                    y=self.infidelities,
+                    mode="lines",
+                    name="Infidelity",
+                ),
+                row=1,
+                col=1,
+            )
 
-            fig.add_trace(go.Scatter(
-                x=self.steps, y=self.gradient_norms,
-                mode="lines", name="Gradient Norm",
-            ), row=2, col=1)
+            fig.add_trace(
+                go.Scatter(
+                    x=self.steps,
+                    y=self.gradient_norms,
+                    mode="lines",
+                    name="Gradient Norm",
+                ),
+                row=2,
+                col=1,
+            )
 
             fig.update_yaxes(type="log", row=1, col=1)
             fig.update_yaxes(type="log", row=2, col=1)

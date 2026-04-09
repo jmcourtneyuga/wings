@@ -26,8 +26,7 @@ class TestEfficientSU2Ansatz:
         for n, d in [(2, 1), (4, 2), (6, 3), (8, 4), (10, 5)]:
             ansatz = EfficientSU2Ansatz(n_qubits=n, layers=d)
             assert ansatz.n_params == n * 2 * d, (
-                f"Failed for n_qubits={n}, layers={d}: "
-                f"expected {n * 2 * d}, got {ansatz.n_params}"
+                f"Failed for n_qubits={n}, layers={d}: expected {n * 2 * d}, got {ansatz.n_params}"
             )
 
     def test_circuit_construction(self):
@@ -69,9 +68,7 @@ class TestEfficientSU2Ansatz:
         amplitudes = sv.data
 
         # RZ gates introduce complex phases, so imaginary parts should be nonzero
-        assert np.any(np.abs(amplitudes.imag) > 1e-10), (
-            "Expected complex amplitudes from RZ gates"
-        )
+        assert np.any(np.abs(amplitudes.imag) > 1e-10), "Expected complex amplitudes from RZ gates"
 
     def test_satisfies_ansatz_protocol(self):
         """Test isinstance(ansatz, AnsatzProtocol) is True."""

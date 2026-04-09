@@ -5,8 +5,9 @@ Extends WINGS to support 2D and 3D spatial wavefunctions
 by partitioning qubits across dimensions.
 """
 
-import numpy as np
 from typing import Optional
+
+import numpy as np
 
 __all__ = ["NDGrid", "gaussian_nd"]
 
@@ -45,11 +46,11 @@ class NDGrid:
 
     @property
     def total_states(self) -> int:
-        return 2 ** self.total_qubits
+        return 2**self.total_qubits
 
     @property
     def states_per_dim(self) -> list[int]:
-        return [2 ** n for n in self._n_qubits_per_dim]
+        return [2**n for n in self._n_qubits_per_dim]
 
     def positions(self) -> list[np.ndarray]:
         """Return list of 1D position arrays, one per dimension."""
@@ -61,7 +62,7 @@ class NDGrid:
     def meshgrid(self) -> list[np.ndarray]:
         """Return meshgrid arrays for all dimensions."""
         pos = self.positions()
-        return np.meshgrid(*pos, indexing='ij')
+        return list(np.meshgrid(*pos, indexing="ij"))
 
 
 def gaussian_nd(
@@ -88,7 +89,7 @@ def gaussian_nd(
     components = []
     for i in range(grid.n_dimensions):
         x = pos[i]
-        psi_1d = np.exp(-(x - centers[i])**2 / (2 * sigmas[i]**2))
+        psi_1d = np.exp(-((x - centers[i]) ** 2) / (2 * sigmas[i] ** 2))
         if momenta[i] != 0:
             psi_1d = psi_1d * np.exp(1j * momenta[i] * x)
         components.append(psi_1d.astype(np.complex128))

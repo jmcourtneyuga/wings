@@ -553,6 +553,7 @@ class TestCUDAStreamPipelining:
 
     def test_simulator_has_stream(self):
         from wings.evaluators.custatevec import CuStateVecSimulator
+
         sim = CuStateVecSimulator(n_qubits=4, precision="double")
         assert hasattr(sim, "stream")
         assert sim.stream is not None
@@ -560,12 +561,14 @@ class TestCUDAStreamPipelining:
 
     def test_simulator_has_rz(self):
         from wings.evaluators.custatevec import CuStateVecSimulator
+
         sim = CuStateVecSimulator(n_qubits=4, precision="double")
         assert hasattr(sim, "apply_rz")
         sim.destroy()
 
     def test_simulator_has_synchronize(self):
         from wings.evaluators.custatevec import CuStateVecSimulator
+
         sim = CuStateVecSimulator(n_qubits=4, precision="double")
         assert hasattr(sim, "synchronize")
         sim.destroy()

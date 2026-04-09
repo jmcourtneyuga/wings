@@ -1,13 +1,20 @@
 """Natural gradient descent with diagonal Quantum Fisher Information Matrix."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from .optimizer import GaussianOptimizer
 
 __all__ = ["compute_qfim_diagonal", "compute_natural_gradient"]
 
 
 def compute_qfim_diagonal(
-    optimizer: "GaussianOptimizer",
+    optimizer: GaussianOptimizer,
     params: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
@@ -55,7 +62,7 @@ def compute_qfim_diagonal(
 
 
 def compute_natural_gradient(
-    optimizer: "GaussianOptimizer",
+    optimizer: GaussianOptimizer,
     params: NDArray[np.float64],
     regularization: float = 0.001,
 ) -> NDArray[np.float64]:

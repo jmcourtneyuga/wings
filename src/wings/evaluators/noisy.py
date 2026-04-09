@@ -8,9 +8,6 @@ Requires qiskit-aer for full noise model simulation (optional).
 """
 
 from dataclasses import dataclass
-from typing import Optional
-
-import numpy as np
 
 __all__ = ["NoiseConfig"]
 
@@ -38,13 +35,15 @@ class NoiseConfig:
 
     def has_noise(self) -> bool:
         """Check if any noise is configured."""
-        return any([
-            self.depolarizing_rate > 0,
-            self.amplitude_damping_rate > 0,
-            self.gate_error_1q > 0,
-            self.gate_error_2q > 0,
-            self.readout_error > 0,
-        ])
+        return any(
+            [
+                self.depolarizing_rate > 0,
+                self.amplitude_damping_rate > 0,
+                self.gate_error_1q > 0,
+                self.gate_error_2q > 0,
+                self.readout_error > 0,
+            ]
+        )
 
     def noise_robust_objective(
         self,
@@ -98,14 +97,13 @@ class NoiseConfig:
             from qiskit_aer.noise import (
                 NoiseModel,
                 ReadoutError,
-                amplitude_damping_error,
                 depolarizing_error,
             )
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "qiskit-aer is required for noise model simulation. "
                 "Install with: pip install qiskit-aer"
-            )
+            ) from err
 
         noise_model = NoiseModel()
 

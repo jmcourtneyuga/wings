@@ -125,26 +125,25 @@ class CuStateVecSimulator:
         """Apply Pauli-X gate to target qubit."""
         targets = np.array([target], dtype=np.int32)
 
-        with cp.cuda.Device(self.device_id):
-            with self.stream:
-                cusv.apply_matrix(
-                    self.handle,
-                    self.d_sv.data.ptr,
-                    self.cuda_dtype,
-                    self.n_qubits,
-                    self.x_gate.data.ptr,
-                    self.cuda_dtype,
-                    cusv.MatrixLayout.ROW,
-                    0,
-                    targets.ctypes.data,
-                    1,
-                    0,
-                    0,
-                    0,
-                    self.compute_type,
-                    0,
-                    0,
-                )
+        with cp.cuda.Device(self.device_id), self.stream:
+            cusv.apply_matrix(
+                self.handle,
+                self.d_sv.data.ptr,
+                self.cuda_dtype,
+                self.n_qubits,
+                self.x_gate.data.ptr,
+                self.cuda_dtype,
+                cusv.MatrixLayout.ROW,
+                0,
+                targets.ctypes.data,
+                1,
+                0,
+                0,
+                0,
+                self.compute_type,
+                0,
+                0,
+            )
         self.n_gate_applications += 1
 
     def apply_ry(self, theta: float, target: int) -> None:
@@ -154,30 +153,29 @@ class CuStateVecSimulator:
 
         targets = np.array([target], dtype=np.int32)
 
-        with cp.cuda.Device(self.device_id):
-            with self.stream:
-                # Build matrix on CPU and copy once
-                ry_cpu = np.array([[c, -s], [s, c]], dtype=np.complex128)
-                cp.copyto(self._ry_matrix, cp.asarray(ry_cpu))
+        with cp.cuda.Device(self.device_id), self.stream:
+            # Build matrix on CPU and copy once
+            ry_cpu = np.array([[c, -s], [s, c]], dtype=np.complex128)
+            cp.copyto(self._ry_matrix, cp.asarray(ry_cpu))
 
-                cusv.apply_matrix(
-                    self.handle,
-                    self.d_sv.data.ptr,
-                    self.cuda_dtype,
-                    self.n_qubits,
-                    self._ry_matrix.data.ptr,
-                    self.cuda_dtype,
-                    cusv.MatrixLayout.ROW,
-                    0,
-                    targets.ctypes.data,
-                    1,
-                    0,
-                    0,
-                    0,
-                    self.compute_type,
-                    0,
-                    0,
-                )
+            cusv.apply_matrix(
+                self.handle,
+                self.d_sv.data.ptr,
+                self.cuda_dtype,
+                self.n_qubits,
+                self._ry_matrix.data.ptr,
+                self.cuda_dtype,
+                cusv.MatrixLayout.ROW,
+                0,
+                targets.ctypes.data,
+                1,
+                0,
+                0,
+                0,
+                self.compute_type,
+                0,
+                0,
+            )
         self.n_gate_applications += 1
 
     def apply_cnot(self, control: int, target: int) -> None:
@@ -186,44 +184,55 @@ class CuStateVecSimulator:
         controls = np.array([control], dtype=np.int32)
         control_bits = np.array([1], dtype=np.int32)
 
-        with cp.cuda.Device(self.device_id):
-            with self.stream:
-                cusv.apply_matrix(
-                    self.handle,
-                    self.d_sv.data.ptr,
-                    self.cuda_dtype,
-                    self.n_qubits,
-                    self.x_gate.data.ptr,
-                    self.cuda_dtype,
-                    cusv.MatrixLayout.ROW,
-                    0,
-                    targets.ctypes.data,
-                    1,
-                    controls.ctypes.data,
-                    control_bits.ctypes.data,
-                    1,
-                    self.compute_type,
-                    0,
-                    0,
-                )
+        with cp.cuda.Device(self.device_id), self.stream:
+            cusv.apply_matrix(
+                self.handle,
+                self.d_sv.data.ptr,
+                self.cuda_dtype,
+                self.n_qubits,
+                self.x_gate.data.ptr,
+                self.cuda_dtype,
+                cusv.MatrixLayout.ROW,
+                0,
+                targets.ctypes.data,
+                1,
+                controls.ctypes.data,
+                control_bits.ctypes.data,
+                1,
+                self.compute_type,
+                0,
+                0,
+            )
         self.n_gate_applications += 1
 
     def apply_rz(self, theta: float, target: int) -> None:
         """Apply RZ(theta) gate."""
         targets = np.array([target], dtype=np.int32)
-        with cp.cuda.Device(self.device_id):
-            with self.stream:
-                phase_plus = np.exp(-1j * theta / 2)
-                phase_minus = np.exp(1j * theta / 2)
-                rz_cpu = np.array([[phase_plus, 0], [0, phase_minus]], dtype=np.complex128)
-                if not hasattr(self, "_rz_matrix"):
-                    self._rz_matrix = cp.zeros((2, 2), dtype=self.dtype)
-                cp.copyto(self._rz_matrix, cp.asarray(rz_cpu))
-                cusv.apply_matrix(
-                    self.handle, self.d_sv.data.ptr, self.cuda_dtype, self.n_qubits,
-                    self._rz_matrix.data.ptr, self.cuda_dtype, cusv.MatrixLayout.ROW, 0,
-                    targets.ctypes.data, 1, 0, 0, 0, self.compute_type, 0, 0,
-                )
+        with cp.cuda.Device(self.device_id), self.stream:
+            phase_plus = np.exp(-1j * theta / 2)
+            phase_minus = np.exp(1j * theta / 2)
+            rz_cpu = np.array([[phase_plus, 0], [0, phase_minus]], dtype=np.complex128)
+            if not hasattr(self, "_rz_matrix"):
+                self._rz_matrix = cp.zeros((2, 2), dtype=self.dtype)
+            cp.copyto(self._rz_matrix, cp.asarray(rz_cpu))
+            cusv.apply_matrix(
+                self.handle,
+                self.d_sv.data.ptr,
+                self.cuda_dtype,
+                self.n_qubits,
+                self._rz_matrix.data.ptr,
+                self.cuda_dtype,
+                cusv.MatrixLayout.ROW,
+                0,
+                targets.ctypes.data,
+                1,
+                0,
+                0,
+                0,
+                self.compute_type,
+                0,
+                0,
+            )
         self.n_gate_applications += 1
 
     def synchronize(self) -> None:

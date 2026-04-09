@@ -31,9 +31,9 @@ class TargetFunction(Enum):
     LORENTZIAN = "lorentzian"
     SECH = "sech"  # Hyperbolic secant (soliton-like)
     GAUSSIAN_WAVEPACKET = "gaussian_wavepacket"
-    TRACY_WIDOM_GOE = "tracy_widom_goe"    # TW_1 (β=1, real symmetric)
-    TRACY_WIDOM_GUE = "tracy_widom_gue"    # TW_2 (β=2, Hermitian)
-    TRACY_WIDOM_GSE = "tracy_widom_gse"    # TW_4 (β=4, quaternion self-dual)
+    TRACY_WIDOM_GOE = "tracy_widom_goe"  # TW_1 (β=1, real symmetric)
+    TRACY_WIDOM_GUE = "tracy_widom_gue"  # TW_2 (β=2, Hermitian)
+    TRACY_WIDOM_GSE = "tracy_widom_gse"  # TW_4 (β=4, quaternion self-dual)
     CUSTOM = "custom"
 
 
@@ -80,9 +80,10 @@ def optimal_box_size(
     from scipy.optimize import minimize_scalar
     from scipy.special import erfc
 
-    n_points = 2 ** n_qubits
+    n_points = 2**n_qubits
 
     if target_function == "gaussian":
+
         def total_error(L):
             if L <= 0:
                 return 1e10
@@ -240,7 +241,9 @@ class OptimizerConfig:
     custatevec_batch_size: int = 128
 
     # Backend selection
-    backend: str = "auto"  # "auto", "qiskit", "jax" -- selects statevector simulation engine  # v0.4.0
+    backend: str = (
+        "auto"  # "auto", "qiskit", "jax" -- selects statevector simulation engine  # v0.4.0
+    )
 
     # Multi-GPU support
     use_multi_gpu: bool = False
@@ -270,7 +273,11 @@ class OptimizerConfig:
             # TW PDFs live on ~[-8, 5]; use 8.0 to cover full support
             self.box_size = 8.0
         elif self.auto_optimize_box and self.box_size is None:
-            target_fn_name = self.target_function.value if hasattr(self.target_function, 'value') else str(self.target_function)
+            target_fn_name = (
+                self.target_function.value
+                if hasattr(self.target_function, "value")
+                else str(self.target_function)
+            )
             self.box_size = optimal_box_size(self.sigma, self.n_qubits, target_fn_name)
         elif self.box_size is None:
             # Existing heuristic (default)
@@ -307,7 +314,7 @@ class OptimizerConfig:
     @property
     def n_params(self) -> int:
         """Number of variational parameters."""
-        if self.ansatz is not None and hasattr(self.ansatz, 'n_params'):
+        if self.ansatz is not None and hasattr(self.ansatz, "n_params"):
             return self.ansatz.n_params
         return self.n_qubits * self.n_qubits
 

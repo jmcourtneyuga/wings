@@ -7,12 +7,12 @@ name = "wings"
 version = "0.4.0"
 description = "Wavepacket Initialization on Neighboring Grid States - GPU-accelerated variational quantum state preparation"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = {file = "LICENSE.txt"}
 authors = [
     {name = "Joshua Courtney", email = "joshuamcourtney@gmail.com"}
 ]
 maintainers = [
-    {name = "Your Name", email = "joshuamcourtney@gmail.com"}
+    {name = "Joshua Courtney", email = "joshuamcourtney@gmail.com"}
 ]
 keywords = [
     "quantum computing",
@@ -147,10 +147,6 @@ known-first-party = ["wings"]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
-
-# ============================================================================
-# MyPy Configuration
-# ============================================================================
 
 # ============================================================================
 # MyPy Configuration

@@ -43,12 +43,15 @@ class AnsatzProtocol(Protocol):
 
 
 class DefaultAnsatz:
-    def __init__(self, n_qubits: int, depth: Optional[int] = None, entanglement: str = "linear") -> None:
+    def __init__(
+        self, n_qubits: int, depth: Optional[int] = None, entanglement: str = "linear"
+    ) -> None:
         self._n_qubits = n_qubits
         self._depth = depth if depth is not None else n_qubits
         self._n_params = n_qubits * self._depth
         self._entanglement = entanglement
         from .ansatz_library import generate_entanglement_map
+
         self._entanglement_map = generate_entanglement_map(n_qubits, entanglement)
 
     @property

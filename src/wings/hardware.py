@@ -24,6 +24,7 @@ __all__ = [
 @dataclass
 class HardwareResult:
     """Result from hardware execution."""
+
     counts: dict[str, int]
     classical_fidelity: float
     n_shots: int
@@ -51,7 +52,7 @@ def transpile_for_hardware(
         Transpiled circuit in the target gate set
     """
     if basis_gates is None:
-        basis_gates = ['cx', 'rz', 'sx', 'x']
+        basis_gates = ["cx", "rz", "sx", "x"]
 
     return transpile(
         circuit,
@@ -72,7 +73,7 @@ def counts_to_probabilities(counts: dict[str, int], n_qubits: int) -> np.ndarray
     Returns:
         Probability array of length 2^n_qubits, indexed by integer basis state
     """
-    n_states = 2 ** n_qubits
+    n_states = 2**n_qubits
     total_shots = sum(counts.values())
     probs = np.zeros(n_states)
 
@@ -104,8 +105,8 @@ def classical_state_fidelity(
         Classical state fidelity in [0, 1]
     """
     # Bhattacharyya coefficient: BC = sum(sqrt(p*q))
-    bc = np.sum(np.sqrt(target_probs * measured_probs))
-    return float(bc ** 2)
+    bc: float = np.sum(np.sqrt(target_probs * measured_probs))
+    return float(bc**2)
 
 
 def execute_on_hardware(
@@ -130,11 +131,11 @@ def execute_on_hardware(
     """
     try:
         from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "qiskit-ibm-runtime is required for hardware execution. "
             "Install with: pip install qiskit-ibm-runtime"
-        )
+        ) from err
 
     import time
 

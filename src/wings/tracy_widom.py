@@ -38,7 +38,6 @@ References
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.special import airy
-from typing import Optional, Tuple
 
 __all__ = [
     "tracy_widom_pdf",
@@ -60,11 +59,12 @@ _VALID_BETAS = {TW_BETA_1, TW_BETA_2, TW_BETA_4}
 # Core: solve Painlevé II for the Hastings-McLeod solution
 # ---------------------------------------------------------------------------
 
+
 def solve_painleve_ii(
     s_max: float = 8.0,
     s_min: float = -8.0,
     n_points: int = 4096,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Solve the Painlevé II ODE  q'' = s q + 2 q^3  backward from s_max.
 
@@ -127,6 +127,7 @@ def solve_painleve_ii(
 # Tracy-Widom CDFs and PDFs from Painlevé II solution
 # ---------------------------------------------------------------------------
 
+
 def _compute_tw_distributions(
     s_grid: np.ndarray,
     q_vals: np.ndarray,
@@ -143,7 +144,7 @@ def _compute_tw_distributions(
     """
     ds = np.diff(s_grid)
     n = len(s_grid)
-    q2 = q_vals**2
+    q2: np.ndarray = q_vals**2
 
     # R(s) = ∫_s^∞ q(t)^2 dt  — integrate from right to left
     R = np.zeros(n)
@@ -178,15 +179,19 @@ def _compute_tw_distributions(
     f4 = np.maximum(f4, 0.0)
 
     return {
-        "F1": F1, "f1": f1,
-        "F2": F2, "f2": f2,
-        "F4": F4, "f4": f4,
+        "F1": F1,
+        "f1": f1,
+        "F2": F2,
+        "f2": f2,
+        "F4": F4,
+        "f4": f4,
     }
 
 
 # ---------------------------------------------------------------------------
 # Public API: Tracy-Widom wavefunctions for WINGS
 # ---------------------------------------------------------------------------
+
 
 def tracy_widom_pdf(
     s: np.ndarray,
@@ -268,8 +273,7 @@ def tracy_widom_wavefunction(
     *expressibility* to reach the TW shape is the subject of the numerical
     verification.
     """
-    pdf = tracy_widom_pdf(x, beta=beta, s_max=s_max, s_min=s_min,
-                          n_painleve=n_painleve)
+    pdf = tracy_widom_pdf(x, beta=beta, s_max=s_max, s_min=s_min, n_painleve=n_painleve)
     psi = np.sqrt(pdf)
     return psi.astype(np.complex128)
 

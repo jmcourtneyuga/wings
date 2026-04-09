@@ -57,8 +57,6 @@ class TestQuantumFisherInformation:
         from wings.natural_gradient import compute_natural_gradient
 
         zero_params = np.zeros(36)
-        nat_grad = compute_natural_gradient(
-            small_optimizer, zero_params, regularization=0.01
-        )
+        nat_grad = compute_natural_gradient(small_optimizer, zero_params, regularization=0.01)
         assert np.all(np.isfinite(nat_grad))
         assert np.linalg.norm(nat_grad) < 1e6

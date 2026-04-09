@@ -9,7 +9,6 @@ Reference: Feit, Fleck & Steiger, JCP 47, 412 (1982)
 """
 
 import numpy as np
-from typing import Callable, Optional
 
 __all__ = [
     "make_grid",
@@ -115,6 +114,7 @@ def evolve_classical(
 # Built-in potentials
 # ============================================================
 
+
 def free_particle(x: np.ndarray) -> np.ndarray:
     """V(x) = 0 everywhere."""
     return np.zeros_like(x)
@@ -127,7 +127,7 @@ def harmonic_potential(
     x0: float = 0.0,
 ) -> np.ndarray:
     """Harmonic oscillator: V(x) = 0.5 * mass * omega^2 * (x - x0)^2."""
-    return 0.5 * mass * omega**2 * (x - x0)**2
+    return 0.5 * mass * omega**2 * (x - x0) ** 2
 
 
 def morse_potential(
@@ -137,7 +137,7 @@ def morse_potential(
     x_e: float = 0.0,
 ) -> np.ndarray:
     """Morse potential: V(x) = D_e * (1 - exp(-a*(x-x_e)))^2."""
-    return D_e * (1.0 - np.exp(-a * (x - x_e)))**2
+    return D_e * (1.0 - np.exp(-a * (x - x_e))) ** 2
 
 
 def lennard_jones_potential(
@@ -147,4 +147,4 @@ def lennard_jones_potential(
 ) -> np.ndarray:
     """Lennard-Jones: V(r) = 4*eps*((sigma/r)^12 - (sigma/r)^6). Clips at small r."""
     r = np.maximum(np.abs(x), 0.1 * sigma_lj)  # Prevent singularity
-    return 4.0 * epsilon * ((sigma_lj / r)**12 - (sigma_lj / r)**6)
+    return 4.0 * epsilon * ((sigma_lj / r) ** 12 - (sigma_lj / r) ** 6)

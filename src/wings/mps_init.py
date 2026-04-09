@@ -7,8 +7,9 @@ then extracts approximate initial parameters for the DefaultAnsatz.
 Reference: Ran, PRA 101, 032310 (2020)
 """
 
-import numpy as np
 from typing import Optional
+
+import numpy as np
 
 __all__ = ["mps_decompose", "mps_to_statevector", "mps_initial_params"]
 
@@ -85,7 +86,7 @@ def mps_to_statevector(tensors: list[np.ndarray]) -> np.ndarray:
         # tensor[i] shape: (chi_left, 2, chi_right)
         t = tensors[i]
         # Contract: result @ tensor over the bond dimension
-        new_result = np.einsum('...i,ijk->...jk', result, t)
+        new_result = np.einsum("...i,ijk->...jk", result, t)
         # Reshape: merge physical indices
         shape = new_result.shape
         result = new_result.reshape(-1, shape[-1])
@@ -116,7 +117,7 @@ def mps_initial_params(
     if bond_dim is None:
         bond_dim = min(8, 2 ** (n_qubits // 2))
 
-    n_params = n_qubits * n_qubits
+    n_qubits * n_qubits
 
     # Reconstruct target via MPS for a smoothed approximation
     tensors = mps_decompose(target, n_qubits, bond_dim=bond_dim)
@@ -132,7 +133,7 @@ def mps_initial_params(
     def _neg_fidelity(params):
         """Compute negative fidelity using statevector simulation."""
         psi = _simulate_default_ansatz(params, n_qubits)
-        return -np.abs(np.vdot(tgt, psi)) ** 2
+        return -(np.abs(np.vdot(tgt, psi)) ** 2)
 
     # Start from a physics-informed guess
     x0 = _extract_initial_guess(tgt, n_qubits)
@@ -158,13 +159,13 @@ def _extract_initial_guess(target: np.ndarray, n_qubits: int) -> np.ndarray:
     # except last qubit starts in |1>: RY(theta)|1> = -sin(t/2)|0> + cos(t/2)|1>
 
     # Compute marginal probabilities for each qubit from the target
-    n_states = 2 ** n_qubits
+    n_states = 2**n_qubits
     probs = np.abs(target) ** 2
 
     for i in range(n_qubits):
         # Probability of qubit i being |1>
         mask = np.arange(n_states) & (1 << i)
-        p1 = np.sum(probs[mask > 0])
+        p1: float = np.sum(probs[mask > 0])
         p1 = np.clip(p1, 0.01, 0.99)
 
         if i == n_qubits - 1:
@@ -192,7 +193,7 @@ def _simulate_default_ansatz(params: np.ndarray, n_qubits: int) -> np.ndarray:
 
     n = n_qubits
     depth = n  # DefaultAnsatz default depth = n_qubits
-    dim = 2 ** n
+    dim = 2**n
 
     # Start with |0...0>
     psi = np.zeros(dim, dtype=np.complex128)
@@ -208,7 +209,7 @@ def _simulate_default_ansatz(params: np.ndarray, n_qubits: int) -> np.ndarray:
 
     # Layer 0: RY on each qubit
     for i in range(n):
-        psi = _apply_ry(psi, params[i], i, n)
+        psi = _apply_ry(psi, float(params[i]), i, n)
 
     # Layers 1..depth-1: CX + RY
     ent_map = generate_entanglement_map(n, "linear")
@@ -217,7 +218,7 @@ def _simulate_default_ansatz(params: np.ndarray, n_qubits: int) -> np.ndarray:
             psi = _apply_cx(psi, ctrl, tgt, n)
         for i in range(n):
             param_idx = n + n * d + i
-            psi = _apply_ry(psi, params[param_idx], i, n)
+            psi = _apply_ry(psi, float(params[param_idx]), i, n)
 
     return psi
 
@@ -229,7 +230,7 @@ def _apply_ry(psi: np.ndarray, theta: float, qubit: int, n_qubits: int) -> np.nd
 
     # Reshape to isolate the target qubit dimension
     # Shape: (2^(n-q-1), 2, 2^q) where q=qubit
-    shape = (2 ** (n_qubits - qubit - 1), 2, 2 ** qubit)
+    shape = (2 ** (n_qubits - qubit - 1), 2, 2**qubit)
     psi_r = psi.reshape(shape)
 
     result = np.empty_like(psi_r)
@@ -242,7 +243,7 @@ def _apply_ry(psi: np.ndarray, theta: float, qubit: int, n_qubits: int) -> np.nd
 
 def _apply_cx(psi: np.ndarray, ctrl: int, tgt: int, n_qubits: int) -> np.ndarray:
     """Apply CX gate (ctrl -> tgt) to the statevector (vectorized)."""
-    dim = 2 ** n_qubits
+    dim = 2**n_qubits
     indices = np.arange(dim)
 
     # Find indices where control qubit is 1 and target qubit is 0
