@@ -259,7 +259,7 @@ def shifted_config():
     from wings import OptimizerConfig
 
     return OptimizerConfig(
-        n_qubits=3,
+        n_qubits=4,
         sigma=0.5,
         x0=1.5,
         box_size=6.0,
