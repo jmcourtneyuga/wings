@@ -56,7 +56,7 @@ See Also
 - GitHub: https://github.com/yourusername/gaussian-state-optimizer
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 __author__ = "Joshua M. Courtney"
 __email__ = "joshuamcourtney@gmail.com"
 __license__ = "MIT"

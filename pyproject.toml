@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wings-quantum"
-version = "0.4.0"
+version = "0.4.1"
 description = "Wavepacket Initialization on Neighboring Grid States - GPU-accelerated variational quantum state preparation"
 readme = "README.md"
 license = {file = "LICENSE.txt"}

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-19
+
+### Changed
+- Version bump for PyPI re-publish. Includes accumulated fixes to `adam.py`, `campaign.py`, `cli.py`, `compat.py`, `evaluators/__init__.py`, `evaluators/cpu.py`, `evaluators/gpu.py`, `paths.py`, `results.py`, and `types.py` made on top of the 0.4.0 tag.
+
 ## [0.4.0] - 2026-04-01
 
 ### Added
